@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+build/
+dist/
+*.spec
+*.exe
+.env
+.env.*
+outputs/
+RASCUNHO_*/
+CARGAS_*/
+revisao.json
+REVISAO.xlsx
+EXTRAFRUTI*
+*.zip

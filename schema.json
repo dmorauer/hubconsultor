@@ -1,0 +1,77 @@
+{
+  "EMPLOYER": {
+    "sheet": "Página1",
+    "headers": [
+      "Nome*",
+      "CNPJ*",
+      "Nome para contato*",
+      "Telefone*",
+      "E-mail*",
+      "Moeda (BRL, EUR, USD)*",
+      "Código de integração",
+      "Nome (contato para suporte interno)",
+      "E-mail (contato para suporte interno)",
+      "Telefone (contato para suporte interno)",
+      "Celular (contato para suporte interno)",
+      "Whatsapp (contato para suporte interno)",
+      "Unidade de negócio para faturamento (CPNJ ou Código de integração)",
+      "CEP*",
+      "Logradouro*",
+      "Número*",
+      "Bairro*",
+      "Cidade*",
+      "Estado*",
+      "País*"
+    ]
+  },
+  "CUST": {
+    "sheet": "Página1",
+    "headers": [
+      "Identificador Pai (*)",
+      "Identificador",
+      "Descrição",
+      "Ativo (S ou N)",
+      "Empresa(CNPJ ou código da integração)"
+    ]
+  },
+  "EXPENSES": {
+    "sheet": "Página1",
+    "headers": [
+      "Codigo Despesa *",
+      "Descrição PT-BR *",
+      "Descrição EN",
+      "Descrição ES",
+      "Quantificação \n(VALOR, QUANTIDADE) *",
+      "Identificador Item Orçamento",
+      "Cotável (S ou N)",
+      "Usa Data final (S ou N)",
+      "Ativo (S ou N)",
+      "Somente trajeto (S ou N)",
+      "Utilizar na integração (S ou N)",
+      "Número Nota Obrigatório? (S ou N)",
+      "Imagem Obrigatória? (S ou N)",
+      "Região Obrigatória? (S ou N)",
+      "Anexo Obrigatório? (S ou N)",
+      "Justificativa Obrigatória? (S ou N)"
+    ]
+  },
+  "USERS": {
+    "sheet": "Colaborador",
+    "headers": [
+      "Nome completo",
+      "Sexo (M ou F)",
+      "CPF",
+      "E-mail",
+      "Data de nascimento",
+      "Código de integração",
+      "Ativo (S ou N)",
+      "Usuário",
+      "Senha",
+      "Empresa (código de integração ou CNPJ)",
+      "Centro de custo (Cód. no ERP)",
+      "Descrição centro de custo",
+      "Usuário Aprovador Gestor",
+      "Usuário Aprovador de Valores"
+    ]
+  }
+}
