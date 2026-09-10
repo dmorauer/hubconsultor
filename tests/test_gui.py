@@ -96,6 +96,30 @@ class GuiTests(unittest.TestCase):
         next(w for w in descendants(win) if w.winfo_class() == 'TButton' and w.cget('text') == 'Confirmar 2 alterações').invoke()
         self.assertFalse(self.app.project.analyze().suggestions)
 
+    def test_domain_checkbox_enables_batch_and_can_be_unchecked(self):
+        import tkinter as tk
+        def descendants(widget):
+            for child in widget.winfo_children():
+                yield child
+                yield from descendants(child)
+        self.app.load_project(ask=False)
+        self.app.review_all_emails()
+        win = next(w for w in self.app.winfo_children() if isinstance(w, tk.Toplevel))
+        controls = list(descendants(win))
+        button = next(w for w in controls if w.winfo_class() == 'TButton' and str(w.cget('text')).startswith('Confirmar'))
+        check = next(w for w in controls if w.winfo_class() == 'TCheckbutton')
+        self.assertTrue(button.instate(['disabled']))
+        check.invoke()
+        self.assertFalse(button.instate(['disabled']))
+        self.assertEqual(button.cget('text'), 'Confirmar 2 alterações')
+        check.invoke()
+        self.assertTrue(button.instate(['disabled']))
+        self.assertFalse(self.app.project.decisions)
+        check.invoke()
+        button.invoke()
+        self.assertFalse(self.app.project.analyze().suggestions)
+        self.assertTrue(all(r.values[9] == '' for r in self.app.project.analyze().records['USERS']))
+
 
 if __name__ == '__main__':
     unittest.main()

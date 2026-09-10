@@ -10,7 +10,7 @@ Aplicativo Python local para transformar a planilha preenchida pelo cliente nos 
 4. O programa pergunta se deseja revisar as decisões agora. Escolher Não mantém as pendências.
 5. Em **Pendências**, selecione uma linha e clique em **Revisar seleção**. É possível selecionar várias linhas do mesmo campo para aplicar uma decisão em conjunto.
 6. Em **Dados de saída**, edite qualquer campo de destino. Os originais permanecem intactos.
-7. Para e-mails repetidos, defina a unidade do usuário e confirme seu domínio na aba **Domínios das unidades**. Em **Sugestões de e-mail**, revise individualmente ou clique em **Aplicar todas as sugestões**. A prévia mostra a lista completa e quantas alterações podem ser aplicadas. Clique em **Confirmar alterações** para aplicar o lote. Cancelar não altera os dados; unidades/domínios indefinidos continuam pendentes.
+7. Para e-mails repetidos, defina a unidade do usuário e confirme seu domínio na aba **Domínios das unidades**. Em **Sugestões de e-mail**, revise individualmente ou clique em **Aplicar todas as sugestões**. A prévia mostra a lista completa e quantas alterações podem ser aplicadas. Clique em **Confirmar alterações** para aplicar o lote. Quando a unidade ainda não estiver definida, marque **Confirmo o uso dos domínios exibidos nas sugestões deste lote** para habilitar a aplicação dos endereços apresentados. A unidade continua pendente. Cancelar não altera os dados.
 8. Use **Salvar revisão** para continuar depois. Ao reabrir, analise a mesma origem e clique em **Abrir revisão**.
 9. **Exportar cargas** cria uma pasta nova com quatro `.xlsx`, `REVISAO.xlsx`, `revisao.json` e `LEIA-ME.txt`. Se houver pendências, o aplicativo pergunta se deseja exportar um rascunho.
 

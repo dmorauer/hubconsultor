@@ -344,12 +344,12 @@ class Project:
             raise ValueError('O endereço já está em uso nesta carga.')
         self.set_value('USERS', [row], 3, proposed)
 
-    def accept_all_emails(self, preview):
+    def accept_all_emails(self, preview, *, approve_displayed_domains=False):
         """Apply one confirmed snapshot atomically, including the last duplicate row."""
         current = self.analyze()
         if current.suggestions != preview:
             raise ValueError('A lista mudou. Abra a prévia novamente antes de confirmar.')
-        eligible = [s for s in preview if s.confirmed_domain and email_valid(s.proposed)]
+        eligible = [s for s in preview if (s.confirmed_domain or approve_displayed_domains) and email_valid(s.proposed)]
         occupied = {text(r.values[3]).casefold() for r in current.records['USERS'] if r.values[3]}
         for s in eligible:
             if s.proposed.casefold() in occupied:
@@ -358,6 +358,9 @@ class Project:
         # Validate the entire batch before any mutation. Do not reanalyze between rows.
         for s in eligible:
             self.set_value('USERS', [s.row], 3, s.proposed)
+            if not s.confirmed_domain:
+                self.history.append([datetime.now().isoformat(timespec='seconds'), 'USERS', s.row,
+                                     'Domínio da sugestão aprovado neste lote', '', s.domain])
         return len(eligible), len(preview) - len(eligible)
 
     def choices(self, kind, row, col):

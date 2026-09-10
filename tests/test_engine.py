@@ -111,6 +111,14 @@ class EngineTests(unittest.TestCase):
             self.p.accept_all_emails(preview)
         self.assertEqual(self.p.decisions, before)
 
+    def test_explicit_domain_approval_does_not_assign_company(self):
+        preview = self.p.analyze().suggestions
+        self.assertEqual(self.p.accept_all_emails(preview, approve_displayed_domains=True), (2, 0))
+        self.assertFalse(self.p.analyze().suggestions)
+        self.assertTrue(all(r.values[9] == '' for r in self.p.analyze().records['USERS']))
+        self.assertFalse(self.p.domains)
+        self.assertTrue(any(h[3] == 'Domínio da sugestão aprovado neste lote' for h in self.p.history))
+
     def test_unit_domain_controls_email_and_explicit_acceptance(self):
         self.p.set_value('USERS', [2, 3], 9, '01234567000189')
         self.p.confirm_domain('01234567000189', '@unidade.example.com')

@@ -348,25 +348,36 @@ class App(tk.Tk):
         win.grab_set()
         frame = ttk.Frame(win, padding=20)
         frame.pack(fill='both', expand=True)
-        ttk.Label(frame, text=f'{len(eligible)} alterações propostas | {len(preview) - len(eligible)} pendentes', font=('Segoe UI', 13, 'bold')).pack(anchor='w')
-        ttk.Label(frame, text='Confira a lista completa. Apenas sugestões com unidade e domínio confirmados serão aplicadas.', wraplength=1040).pack(anchor='w', pady=(6, 12))
+        summary = tk.StringVar()
+        approve_domains = tk.BooleanVar(value=False)
+        ttk.Label(frame, textvariable=summary, font=('Segoe UI', 13, 'bold')).pack(anchor='w')
+        ttk.Label(frame, text='Confira os endereços abaixo. Você pode aprovar os domínios exibidos para corrigir os e-mails agora, sem definir a unidade.', wraplength=1040).pack(anchor='w', pady=(6, 8))
+        approval = ttk.Checkbutton(frame, text='Confirmo o uso dos domínios exibidos nas sugestões deste lote', variable=approve_domains)
+        approval.pack(anchor='w', pady=(0, 8))
         actions = ttk.Frame(frame)
         actions.pack(side='bottom', fill='x', pady=(12, 0))
         ttk.Button(actions, text='Cancelar', command=win.destroy).pack(side='left')
         table = self.tree(frame, [('row', 'Linha', 65), ('name', 'Nome', 235), ('old', 'E-mail atual', 260), ('new', 'Sugestão', 280), ('state', 'Tratamento', 300)])
-        for s in preview:
-            state = 'Será aplicada' if s in eligible else 'Pendente: confirmar unidade/domínio' if not s.confirmed_domain else 'Pendente: endereço insuficiente'
-            table.insert('', 'end', values=[s.row, s.name, s.original, s.proposed, state])
         def confirm():
             try:
-                applied, pending = self.project.accept_all_emails(preview)
+                applied, pending = self.project.accept_all_emails(preview, approve_displayed_domains=approve_domains.get())
                 win.destroy()
                 self.refresh()
                 self.status.set(f'{applied} sugestões aplicadas nesta revisão. {pending} sugestões da prévia ficaram pendentes. Exporte para salvar as cargas.')
             except ValueError as exc:
                 messagebox.showerror('Sugestões não aplicadas', str(exc), parent=win)
-        ttk.Button(actions, text=f'Confirmar {len(eligible)} alterações', style='Primary.TButton', command=confirm,
-                   state='normal' if eligible else 'disabled').pack(side='right')
+        confirm_button = ttk.Button(actions, style='Primary.TButton', command=confirm)
+        confirm_button.pack(side='right')
+        def update_preview():
+            eligible = [s for s in preview if (s.confirmed_domain or approve_domains.get()) and email_valid(s.proposed)]
+            summary.set(f'{len(eligible)} alterações propostas | {len(preview) - len(eligible)} pendentes')
+            confirm_button.configure(text=f'Confirmar {len(eligible)} alterações', state='normal' if eligible else 'disabled')
+            table.delete(*table.get_children())
+            for s in preview:
+                state = 'Será aplicada' if s in eligible else 'Marque a confirmação dos domínios' if not s.confirmed_domain else 'Pendente: endereço insuficiente'
+                table.insert('', 'end', values=[s.row, s.name, s.original, s.proposed, state])
+        approval.configure(command=update_preview)
+        update_preview()
 
     def edit_domain(self):
         selected = self.domains_tree.selection()
