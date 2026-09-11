@@ -31,6 +31,7 @@ class App(tk.Tk):
         self.status = tk.StringVar(value='Selecione a planilha preenchida pelo cliente para começar.')
         self.summary = tk.StringVar(value='Nenhuma planilha carregada')
         self.filter = tk.StringVar(value='Todas')
+        self.issue_severity = tk.StringVar(value='Todas')
         self.kind = tk.StringVar(value=LABELS['USERS'])
         self.search = tk.StringVar()
         self.issue_items = {}
@@ -81,18 +82,27 @@ class App(tk.Tk):
         ttk.Label(outer, textvariable=self.status, style='Sub.TLabel', wraplength=1150).pack(side='bottom', anchor='w', pady=(12, 0))
         self.tabs = ttk.Notebook(outer)
         self.tabs.pack(fill='both', expand=True)
+        self.overview_tab = ttk.Frame(self.tabs, padding=10)
         self.pending_tab = ttk.Frame(self.tabs, padding=10)
         self.emails_tab = ttk.Frame(self.tabs, padding=10)
         self.data_tab = ttk.Frame(self.tabs, padding=10)
         self.domains_tab = ttk.Frame(self.tabs, padding=10)
-        for frame, label in [(self.pending_tab, 'Pendências'), (self.emails_tab, 'Sugestões de e-mail'), (self.data_tab, 'Dados de saída'), (self.domains_tab, 'Domínios das unidades')]:
+        for frame, label in [(self.overview_tab, 'Resumo por aba'), (self.pending_tab, 'Pendências'), (self.emails_tab, 'Sugestões de e-mail'), (self.data_tab, 'Dados de saída'), (self.domains_tab, 'Domínios das unidades')]:
             self.tabs.add(frame, text=label)
+        ttk.Label(self.overview_tab, text='Clique em uma quantidade para abrir os registros correspondentes.', font=('Segoe UI', 11, 'bold')).pack(anchor='w', pady=(0, 10))
+        ttk.Label(self.overview_tab, text='Erros e pendências contam ocorrências, não pessoas. Um registro pode ter mais de uma ocorrência.\nSugestões de e-mail podem corresponder aos mesmos registros com erro; não some as colunas.', wraplength=1050, style='Sub.TLabel').pack(anchor='w', pady=(0, 12))
+        self.overview_tree = self.tree(self.overview_tab, [('sheet', 'Aba', 240), ('records', 'Registros', 135), ('errors', 'Erros', 135), ('suggestions', 'Sugestões', 135), ('pending', 'Pendências', 135), ('warnings', 'Avisos', 135)])
+        self.overview_tree.bind('<ButtonRelease-1>', self.open_overview_cell)
         bar = ttk.Frame(self.pending_tab)
         bar.pack(fill='x', pady=(0, 8))
         ttk.Label(bar, text='Carga:').pack(side='left')
         combo = ttk.Combobox(bar, textvariable=self.filter, values=['Todas'] + list(LABELS.values()), state='readonly', width=24)
         combo.pack(side='left', padx=8)
         combo.bind('<<ComboboxSelected>>', lambda e: self.refresh_issues())
+        ttk.Label(bar, text='Situação:').pack(side='left', padx=(10, 0))
+        severity = ttk.Combobox(bar, textvariable=self.issue_severity, values=['Todas', 'Erro', 'Pendente', 'Aviso'], state='readonly', width=12)
+        severity.pack(side='left', padx=8)
+        severity.bind('<<ComboboxSelected>>', lambda e: self.refresh_issues())
         ttk.Button(bar, text='Revisar seleção', command=self.edit_issues).pack(side='right')
         ttk.Label(self.pending_tab, text='Selecione uma ou mais linhas do mesmo campo para decidir em conjunto. Adiar mantém a pendência.', style='Sub.TLabel').pack(anchor='w', pady=(0, 8))
         self.issues_tree = self.tree(self.pending_tab, [('status', 'Situação', 85), ('kind', 'Carga', 150), ('row', 'Linha origem', 115), ('name', 'Registro', 230), ('field', 'Campo', 180), ('reason', 'Motivo', 460)])
@@ -185,6 +195,7 @@ class App(tk.Tk):
         if not self.project:
             return
         self.analysis = self.project.analyze()
+        self.refresh_overview()
         data = self.analysis.records
         self.summary.set(f'{len(data["EMPLOYER"])} unidades   ·   {len(data["USERS"])} usuários   ·   {len(data["CUST"])} centros de custo   ·   {len(data["EXPENSES"])} despesas   |   {len(self.analysis.blocking)} pendências')
         self.refresh_issues()
@@ -192,6 +203,37 @@ class App(tk.Tk):
         self.refresh_data()
         self.refresh_domains()
         self.status.set('Decisões aplicadas somente nesta revisão. Arquivos originais preservados. Exportação pendente.' if self.project.history else 'Análise concluída. Revise as pendências ou exporte um rascunho para conferência.')
+
+    def refresh_overview(self):
+        self.overview_tree.delete(*self.overview_tree.get_children())
+        for kind in KINDS:
+            issues = [i for i in self.analysis.issues if i.kind == kind]
+            self.overview_tree.insert('', 'end', iid=kind, values=[SHEETS[kind], len(self.analysis.records[kind]),
+                sum(i.severity == 'Erro' for i in issues), len(self.analysis.suggestions) if kind == 'USERS' else 0,
+                sum(i.severity == 'Pendente' for i in issues), sum(i.severity == 'Aviso' for i in issues)])
+
+    def open_overview_cell(self, event):
+        kind = self.overview_tree.identify_row(event.y)
+        column = self.overview_tree.identify_column(event.x)
+        if kind and column in ('#2', '#3', '#4', '#5', '#6'):
+            self.open_overview(kind, column)
+
+    def open_overview(self, kind, column):
+        if column == '#2':
+            self.kind.set(LABELS[kind])
+            self.search.set('')
+            self.refresh_data()
+            self.tabs.select(self.data_tab)
+        elif column == '#4':
+            if kind == 'USERS':
+                self.tabs.select(self.emails_tab)
+            else:
+                self.status.set(f'{SHEETS[kind]}: nenhuma sugestão disponível nesta análise.')
+        else:
+            self.filter.set(LABELS[kind])
+            self.issue_severity.set({'#3': 'Erro', '#5': 'Pendente', '#6': 'Aviso'}[column])
+            self.refresh_issues()
+            self.tabs.select(self.pending_tab)
 
     def refresh_issues(self):
         self.issues_tree.delete(*self.issues_tree.get_children())
@@ -201,6 +243,8 @@ class App(tk.Tk):
         names = {(k, r.row): (r.values[1] if k == 'EXPENSES' else r.values[2] if k == 'CUST' else r.values[0]) for k, records in self.analysis.records.items() for r in records}
         for i, issue in enumerate(self.analysis.issues):
             if self.filter.get() != 'Todas' and LABELS[issue.kind] != self.filter.get():
+                continue
+            if self.issue_severity.get() != 'Todas' and issue.severity != self.issue_severity.get():
                 continue
             key = str(i)
             self.issue_items[key] = issue

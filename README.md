@@ -16,6 +16,8 @@ Aplicativo Python local para transformar a planilha preenchida pelo cliente nos 
 
 ## Regras implementadas
 
+- **Resumo por aba:** mostra registros, ocorrências de erro, sugestões de e-mail, pendências e avisos para cada carga. Clique em uma quantidade para abrir a lista correspondente. As contagens são atualizadas após as decisões; erros e sugestões podem se referir aos mesmos registros e não devem ser somados.
+
 - Cabeçalhos, ordem de colunas e nomes das abas dos modelos preservados.
 - Uma linha da origem corresponde a uma linha de saída. Duplicados não são removidos.
 - CNPJ/CPF/CEP e códigos são tratados como texto, preservando zeros existentes. Não se inventam zeros perdidos.

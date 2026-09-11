@@ -10,6 +10,28 @@ from test_engine import source_file, BASE
 
 
 class GuiTests(unittest.TestCase):
+    def test_overview_counts_navigation_and_refresh(self):
+        self.app.load_project(ask=False)
+        values = self.app.overview_tree.item('USERS', 'values')
+        self.assertEqual(int(values[1]), 3)
+        self.assertEqual(int(values[2]), 2)
+        self.assertEqual(int(values[3]), 2)
+        self.assertEqual(int(values[4]), 4)
+        self.app.open_overview('USERS', '#3')
+        self.assertTrue(all(i.kind == 'USERS' and i.severity == 'Erro' for i in self.app.issue_items.values()))
+        self.assertEqual(len(self.app.issue_items), 2)
+        self.app.open_overview('CUST', '#5')
+        self.assertEqual(len(self.app.issue_items), 1)
+        self.app.open_overview('EMPLOYER', '#2')
+        self.assertEqual(len(self.app.data_items), 1)
+        self.app.open_overview('USERS', '#4')
+        self.assertEqual(self.app.tabs.select(), str(self.app.emails_tab))
+        self.app.project.accept_all_emails(self.app.analysis.suggestions, approve_displayed_domains=True)
+        self.app.refresh()
+        values = self.app.overview_tree.item('USERS', 'values')
+        self.assertEqual(int(values[2]), 0)
+        self.assertEqual(int(values[3]), 0)
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.source = Path(self.tmp.name) / 'source.xlsx'
