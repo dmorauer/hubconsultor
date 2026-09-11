@@ -47,6 +47,28 @@ def source_file(path):
 
 
 class EngineTests(unittest.TestCase):
+    def test_normalization_batch_is_explicit_stale_safe_and_persistent(self):
+        self.p.original_values['USERS:2'][0] = '  João   Silva  '
+        self.p.original_values['USERS:2'][4] = '2000-02-01'
+        self.p.original_values['USERS:2'][8] = ' secret  '
+        proposals = self.p.normalizations()
+        self.assertEqual({p['category'] for p in proposals}, {'Espaços', 'Documentos', 'Datas', 'Sim/Não'})
+        self.assertFalse(any(p['kind'] == 'USERS' and p['col'] == 8 for p in proposals))
+        self.assertFalse(self.p.decisions)
+        self.p.accept_normalizations(proposals[:1])
+        previous = dict(self.p.decisions)
+        with self.assertRaises(ValueError):
+            self.p.accept_normalizations(proposals)
+        self.assertEqual(self.p.decisions, previous)
+        self.p.accept_normalizations(self.p.normalizations())
+        self.assertFalse(self.p.normalizations())
+        self.assertEqual(self.p.effective()['USERS'][0].values[0], 'João Silva')
+        session = self.root / 'review.json'
+        self.p.save_session(session)
+        restored = Project(self.source, BASE / 'templates')
+        restored.load_session(session)
+        self.assertFalse(restored.normalizations())
+
     def test_contextual_duplicates_refresh_without_deletion(self):
         self.assertEqual(self.p.duplicate_users(), [])
         first, second, third = self.p.records['USERS']
@@ -241,6 +263,7 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(original, file_hash(self.source))
 
     def test_required_decisions_enable_final_export(self):
+        self.p.accept_normalizations(self.p.normalizations())
         self.p.set_value('CUST', [2], 0, 'RAIZ')
         self.p.set_value('EXPENSES', [2], 0, 'DESP001')
         self.p.set_value('EXPENSES', [2], 4, 'VALOR')

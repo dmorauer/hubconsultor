@@ -10,6 +10,20 @@ from test_engine import source_file, BASE
 
 
 class GuiTests(unittest.TestCase):
+    def test_normalization_cancel_then_category_confirmation(self):
+        self.app.load_project(ask=False)
+        self.app.normalization_category.set('Documentos')
+        self.app.refresh_normalizations()
+        count = len(self.app.normalization_items)
+        self.assertGreater(count, 0)
+        with patch('app.messagebox.askyesno', return_value=False):
+            self.app.apply_normalizations(all_rows=True)
+        self.assertFalse(self.app.project.decisions)
+        with patch('app.messagebox.askyesno', return_value=True):
+            self.app.apply_normalizations(all_rows=True)
+        self.assertFalse(self.app.normalization_items)
+        self.assertTrue(self.app.project.normalizations())
+
     def test_duplicate_comparison_masks_password_and_preserves_rows(self):
         import tkinter as tk
         self.app.load_project(ask=False)
@@ -40,12 +54,12 @@ class GuiTests(unittest.TestCase):
         self.assertEqual(int(values[1]), 3)
         self.assertEqual(int(values[2]), 2)
         self.assertEqual(int(values[3]), 2)
-        self.assertEqual(int(values[4]), 4)
+        self.assertEqual(int(values[4]), 4 + sum(p['kind'] == 'USERS' for p in self.app.project.normalizations()))
         self.app.open_overview('USERS', '#3')
         self.assertTrue(all(i.kind == 'USERS' and i.severity == 'Erro' for i in self.app.issue_items.values()))
         self.assertEqual(len(self.app.issue_items), 2)
         self.app.open_overview('CUST', '#5')
-        self.assertEqual(len(self.app.issue_items), 1)
+        self.assertEqual(len(self.app.issue_items), 1 + sum(p['kind'] == 'CUST' for p in self.app.project.normalizations()))
         self.app.open_overview('EMPLOYER', '#2')
         self.assertEqual(len(self.app.data_items), 1)
         self.app.open_overview('USERS', '#4')

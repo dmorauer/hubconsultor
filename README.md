@@ -66,3 +66,7 @@ python -m unittest discover -s tests -v
 ```
 
 Os testes usam dados fictícios temporários e verificam decisões, colisões, persistência, preservação dos modelos e exportação.
+
+## Correções em lote
+
+Na aba Correções em lote, selecione Espaços, Documentos, Datas ou Sim/Não. Confira origem e proposta e aplique apenas as células selecionadas ou toda a categoria exibida. Senhas não são normalizadas; datas não reconhecidas continuam pendentes para revisão manual. A prévia mantém as conversões de formato existentes, mas a exportação final exige confirmação das normalizações. Rascunhos podem conter conversões ainda pendentes. Decisões ficam no histórico e na revisão salva.

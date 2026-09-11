@@ -141,6 +141,45 @@ class App(tk.Tk):
         ttk.Button(self.duplicates_tab, text='Comparar registros', command=self.compare_duplicates).pack(anchor='e', pady=8)
         self.duplicates_tree = self.tree(self.duplicates_tab, [('cpf', 'CPF', 160), ('rows', 'Linhas de origem', 180), ('classification', 'Comparação', 240), ('names', 'Nomes', 480)])
         self.duplicates_tree.bind('<Double-1>', lambda e: self.compare_duplicates())
+        self.normalizations_tab = ttk.Frame(self.tabs, padding=10)
+        self.tabs.add(self.normalizations_tab, text='Correções em lote')
+        ttk.Label(self.normalizations_tab, text='Revise a origem e a proposta. A conversão prévia de formatos só fica aprovada após sua confirmação.\nSem confirmação, a carga permanece pendente e só pode ser exportada como rascunho.', wraplength=1050).pack(anchor='w')
+        bar = ttk.Frame(self.normalizations_tab)
+        bar.pack(fill='x', pady=8)
+        self.normalization_category = tk.StringVar(value='Espaços')
+        categories = ttk.Combobox(bar, textvariable=self.normalization_category, values=['Espaços', 'Documentos', 'Datas', 'Sim/Não'], state='readonly')
+        categories.pack(side='left')
+        categories.bind('<<ComboboxSelected>>', lambda e: self.refresh_normalizations())
+        ttk.Button(bar, text='Aplicar categoria exibida', command=lambda: self.apply_normalizations(all_rows=True)).pack(side='right')
+        ttk.Button(bar, text='Aplicar selecionadas', command=self.apply_normalizations).pack(side='right', padx=8)
+        self.normalizations_tree = self.tree(self.normalizations_tab, [('kind', 'Carga', 150), ('row', 'Linha origem', 90), ('field', 'Campo', 210), ('before', 'Origem', 290), ('after', 'Proposta', 290)])
+
+    def refresh_normalizations(self):
+        self.normalizations_tree.delete(*self.normalizations_tree.get_children())
+        self.normalization_items = {}
+        if not self.project:
+            return
+        for p in self.project.normalizations():
+            if p['category'] != self.normalization_category.get():
+                continue
+            key = f"{p['kind']}:{p['row']}:{p['col']}"
+            self.normalization_items[key] = p
+            after = p['after'].strftime('%d/%m/%Y') if isinstance(p['after'], datetime) else p['after']
+            self.normalizations_tree.insert('', 'end', iid=key, values=[LABELS[p['kind']], p['row'], self.project.headers[p['kind']][p['col']], repr(p['before']), after])
+
+    def apply_normalizations(self, all_rows=False):
+        keys = self.normalizations_tree.get_children() if all_rows else self.normalizations_tree.selection()
+        preview = [self.normalization_items[k] for k in keys]
+        if not preview:
+            return
+        if not messagebox.askyesno('Confirmar correções em lote', f"Aplicar as {len(preview)} alterações de {self.normalization_category.get()} exibidas na revisão?\nO arquivo original será preservado."):
+            return
+        try:
+            self.project.accept_normalizations(preview)
+            self.refresh()
+        except ValueError as exc:
+            messagebox.showerror('Revisão alterada', str(exc))
+            self.refresh()
 
     def refresh_duplicates(self):
         self.duplicates_tree.delete(*self.duplicates_tree.get_children())
@@ -249,6 +288,7 @@ class App(tk.Tk):
         self.refresh_data()
         self.refresh_domains()
         self.refresh_duplicates()
+        self.refresh_normalizations()
         self.status.set('Decisões aplicadas somente nesta revisão. Arquivos originais preservados. Exportação pendente.' if self.project.history else 'Análise concluída. Revise as pendências ou exporte um rascunho para conferência.')
 
     def refresh_overview(self):

@@ -129,6 +129,7 @@ class Project:
         self.history = []
         self.base_issues = []
         self.records = {k: [] for k in KINDS}
+        self.original_values = {}
         self.fingerprints = {'source': file_hash(self.source)}
         self._load_templates()
         self._load_source()
@@ -200,6 +201,7 @@ class Project:
                         values = [get('Nome completo'), get('Sexo (M ou F)'), get('CPF'), get('E-mail'), get('Data de nascimento'), code,
                                   get('Ativo (S ou N)'), get('Usuário'), get('Senha'), get('Empresa (CNPJ)'),
                                   get('Centro de custo (Cód. no ERP)'), get('Descrição centro de custo'), None, None]
+                    self.original_values[f'{kind}:{row[0].row}'] = list(values)
                     values = [self.coerce(kind, c, v) for c, v in enumerate(values)]
                     self.records[kind].append(Record(kind, row[0].row, values, src))
         finally:
@@ -242,6 +244,44 @@ class Project:
                     record.values[int(c)] = self.coerce(record.kind, int(c), v)
         return result
 
+    def normalizations(self):
+        proposals = []
+        for kind, records in self.records.items():
+            for record in records:
+                original = self.original_values[record.key]
+                for col, before in enumerate(original):
+                    if str(col) in self.decisions.get(record.key, {}) or before is None or (kind == 'USERS' and col == 8):
+                        continue
+                    after = self.coerce(kind, col, before)
+                    category = None
+                    if kind == 'USERS' and col == 4:
+                        if isinstance(before, str) and isinstance(after, datetime):
+                            category = 'Datas'
+                    elif (kind == 'USERS' and col in (2, 9)) or (kind == 'EMPLOYER' and col in (1, 13)) or (kind == 'CUST' and col == 4):
+                        if isinstance(before, str) and before != after:
+                            category = 'Documentos'
+                    elif ENUMS[kind].get(col) == ('S', 'N'):
+                        if isinstance(before, str) and before != after and after in ('S', 'N'):
+                            category = 'Sim/Não'
+                    elif isinstance(before, str):
+                        cleaned = re.sub(r'\s+', ' ', before).strip()
+                        if before != cleaned:
+                            category = 'Espaços'
+                            after = self.coerce(kind, col, cleaned)
+                    if category:
+                        proposals.append(dict(kind=kind, row=record.row, col=col, category=category,
+                                              before=before, after=after))
+        return proposals
+
+    def accept_normalizations(self, preview):
+        current = self.normalizations()
+        if not preview or any(p not in current for p in preview):
+            raise ValueError('A revisão mudou. Atualize as sugestões antes de confirmar.')
+        for p in preview:
+            value = p['after'].strftime('%Y-%m-%d') if isinstance(p['after'], datetime) else p['after']
+            self.set_value(p['kind'], [p['row']], p['col'], value)
+            self.history[-1][4] = p['before']
+
     def set_value(self, kind, rows, col, value):
         if kind not in KINDS or not 0 <= col < WIDTHS[kind]:
             raise ValueError('Campo de destino inválido.')
@@ -269,6 +309,9 @@ class Project:
     def analyze(self):
         data = self.effective()
         result = Analysis(data, list(self.base_issues))
+        for p in self.normalizations():
+            result.issues.append(Issue(p['kind'], p['row'], p['col'],
+                f"Normalização de {p['category']} aguardando confirmação na aba Correções em lote."))
         def add(k, r, c, msg, severity='Pendente'):
             result.issues.append(Issue(k, r, c, msg, severity))
         for kind, records in data.items():
