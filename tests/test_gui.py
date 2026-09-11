@@ -10,6 +10,30 @@ from test_engine import source_file, BASE
 
 
 class GuiTests(unittest.TestCase):
+    def test_duplicate_comparison_masks_password_and_preserves_rows(self):
+        import tkinter as tk
+        self.app.load_project(ask=False)
+        records = self.app.project.records['USERS']
+        records[1].values[2] = records[0].values[2]
+        records[0].values[8] = 'SECRET_TEST_PASSWORD'
+        self.app.refresh()
+        ids = self.app.duplicates_tree.get_children()
+        self.assertEqual(len(ids), 1)
+        self.app.duplicates_tree.selection_set(ids[0])
+        self.app.compare_duplicates()
+        win = next(w for w in self.app.winfo_children() if isinstance(w, tk.Toplevel))
+        trees = [c for w in win.winfo_children() for c in w.winfo_children() if c.winfo_class() == 'Treeview']
+        self.assertEqual(len(trees), 1)
+        values = [trees[0].item(i, 'values') for i in trees[0].get_children()]
+        self.assertEqual(len(values), 14)
+        self.assertNotIn('SECRET_TEST_PASSWORD', str(values))
+        win.destroy()
+        self.assertFalse(self.app.project.decisions)
+        self.app.project.set_value('USERS', [records[1].row], 2, '99999999999')
+        self.app.refresh()
+        self.assertFalse(self.app.duplicates_tree.get_children())
+        self.assertEqual(len(self.app.analysis.records['USERS']), 3)
+
     def test_overview_counts_navigation_and_refresh(self):
         self.app.load_project(ask=False)
         values = self.app.overview_tree.item('USERS', 'values')

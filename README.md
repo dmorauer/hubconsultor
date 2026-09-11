@@ -54,7 +54,7 @@ python app.py
 
 ```powershell
 python -m pip install pyinstaller
-python -m PyInstaller --noconfirm --clean --onefile --windowed --name ValidadorPaytrack --add-data "templates;templates" --add-data "schema.json;." app.py
+python -m PyInstaller --noconfirm --clean --onefile --windowed --name ValidadorPaytrack --add-data "templates;templates" --add-data "schema.json;." --add-data "assets;assets" --icon "assets/paytrack.ico" app.py
 ```
 
 O executável é gerado em `dist`. Os modelos vazios são incorporados. A base do cliente é selecionada depois, na interface.

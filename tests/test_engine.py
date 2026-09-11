@@ -47,6 +47,25 @@ def source_file(path):
 
 
 class EngineTests(unittest.TestCase):
+    def test_contextual_duplicates_refresh_without_deletion(self):
+        self.assertEqual(self.p.duplicate_users(), [])
+        first, second, third = self.p.records['USERS']
+        second.values = list(first.values)
+        group = self.p.duplicate_users()[0]
+        self.assertEqual(group['classification'], 'Dados de saída iguais')
+        second.values[3] = 'outro@example.com'
+        self.assertEqual(self.p.duplicate_users()[0]['differences'], [3])
+        self.assertEqual(self.p.duplicate_users()[0]['classification'], 'Dados divergentes')
+        second.values[0] = 'Outra Pessoa'
+        self.assertEqual(self.p.duplicate_users()[0]['classification'], 'Nomes diferentes')
+        third.values[2] = first.values[2]
+        self.assertEqual(len(self.p.duplicate_users()[0]['records']), 3)
+        self.p.set_value('USERS', [second.row], 2, '99999999999')
+        self.assertEqual(len(self.p.duplicate_users()[0]['records']), 2)
+        self.assertEqual(len(self.p.analyze().records['USERS']), 3)
+        first.values[2] = third.values[2] = ''
+        self.assertEqual(self.p.duplicate_users(), [])
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)

@@ -19,6 +19,7 @@ def resource_dir():
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
+        self.iconbitmap(default=str(resource_dir() / 'assets' / 'paytrack.ico'))
         self.title('Validador de Cargas | Paytrack')
         self.geometry('1260x820')
         self.minsize(1000, 650)
@@ -134,6 +135,51 @@ class App(tk.Tk):
         ttk.Button(self.domains_tab, text='Confirmar / alterar domínio', command=self.edit_domain).pack(anchor='e', pady=(0, 8))
         self.domains_tree = self.tree(self.domains_tab, [('cnpj', 'CNPJ', 160), ('name', 'Unidade', 380), ('proposal', 'Domínio do contato', 220), ('chosen', 'Domínio confirmado', 220)])
         self.domains_tree.bind('<Double-1>', lambda e: self.edit_domain())
+        self.duplicates_tab = ttk.Frame(self.tabs, padding=10)
+        self.tabs.add(self.duplicates_tab, text='Duplicidades')
+        ttk.Label(self.duplicates_tab, text='Usuários com CPF repetido. Compare os dados de saída antes de decidir. Nenhuma linha será excluída.', wraplength=1000).pack(anchor='w')
+        ttk.Button(self.duplicates_tab, text='Comparar registros', command=self.compare_duplicates).pack(anchor='e', pady=8)
+        self.duplicates_tree = self.tree(self.duplicates_tab, [('cpf', 'CPF', 160), ('rows', 'Linhas de origem', 180), ('classification', 'Comparação', 240), ('names', 'Nomes', 480)])
+        self.duplicates_tree.bind('<Double-1>', lambda e: self.compare_duplicates())
+
+    def refresh_duplicates(self):
+        self.duplicates_tree.delete(*self.duplicates_tree.get_children())
+        self.duplicate_items = {}
+        for group in self.project.duplicate_users(self.analysis.records):
+            self.duplicate_items[group['cpf']] = group
+            self.duplicates_tree.insert('', 'end', iid=group['cpf'], values=[group['cpf'],
+                ', '.join(str(r.row) for r in group['records']), group['classification'],
+                ' / '.join(text(r.values[0]) for r in group['records'])])
+
+    def compare_duplicates(self):
+        selected = self.duplicates_tree.selection()
+        if not selected:
+            return
+        group = self.duplicate_items[selected[0]]
+        dialog = tk.Toplevel(self)
+        dialog.title('Comparar usuários com CPF repetido')
+        dialog.geometry('1100x650')
+        dialog.transient(self)
+        ttk.Label(dialog, text=group['classification'] + '\nCampos divergentes destacados. Comparação dos dados de saída; campos exclusivos da origem não são comparados.\nSenhas permanecem ocultas, mesmo quando diferentes.', wraplength=1050, padding=10).pack(anchor='w')
+        bar = ttk.Frame(dialog, padding=10)
+        bar.pack(fill='x')
+        rows = [str(r.row) for r in group['records']]
+        row = tk.StringVar(value=rows[0])
+        ttk.Label(bar, text='Linha de origem para editar:').pack(side='left')
+        ttk.Combobox(bar, textvariable=row, values=rows, state='readonly', width=10).pack(side='left', padx=8)
+        def edit():
+            chosen = int(row.get())
+            if messagebox.askyesno('Decidir agora?', f'Deseja editar o registro da linha {chosen}?', parent=dialog):
+                dialog.destroy()
+                self.edit_dialog('USERS', [chosen], 2)
+        ttk.Button(bar, text='Editar registro', command=edit).pack(side='left')
+        ttk.Button(bar, text='Decidir depois', command=dialog.destroy).pack(side='right')
+        comparison = self.tree(dialog, [('field', 'Campo', 240)] + [(str(r.row), f'Linha {r.row}', 280) for r in group['records']])
+        for col, heading in enumerate(self.project.headers['USERS']):
+            different = col in group['differences']
+            values = [('≠ ' if different else '') + heading] + [('••••••' if text(r.values[col]) else '') if col == 8 else text(r.values[col]) for r in group['records']]
+            comparison.insert('', 'end', values=values, tags=('Erro',) if different else ())
+        dialog.grab_set()
 
     def tree(self, parent, columns):
         frame = ttk.Frame(parent)
@@ -202,6 +248,7 @@ class App(tk.Tk):
         self.refresh_emails()
         self.refresh_data()
         self.refresh_domains()
+        self.refresh_duplicates()
         self.status.set('Decisões aplicadas somente nesta revisão. Arquivos originais preservados. Exportação pendente.' if self.project.history else 'Análise concluída. Revise as pendências ou exporte um rascunho para conferência.')
 
     def refresh_overview(self):

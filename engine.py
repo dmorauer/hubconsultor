@@ -97,6 +97,25 @@ class Analysis:
         return [i for i in self.issues if i.severity != 'Aviso']
 
 class Project:
+    def duplicate_users(self, data=None):
+        """Compare effective output values, never merge or discard source rows."""
+        groups = defaultdict(list)
+        for record in (self.effective() if data is None else data)['USERS']:
+            cpf = document(record.values[2])
+            if cpf:
+                groups[cpf].append(record)
+        result = []
+        for cpf, records in groups.items():
+            if len(records) < 2:
+                continue
+            differences = [col for col in range(WIDTHS['USERS'])
+                           if len({text(r.values[col]) for r in records}) > 1]
+            classification = ('Dados de saída iguais' if not differences else
+                              'Nomes diferentes' if 0 in differences else 'Dados divergentes')
+            result.append(dict(cpf=cpf, records=records, differences=differences,
+                               classification=classification))
+        return result
+
     VERSION = 1
 
     def __init__(self, source, template_dir):
@@ -287,7 +306,11 @@ class Project:
                     if any(src.get(norm(k)) for k in ['CPF Usuário aprovador', 'Nome Usuário aprovador']) and not v[12]:
                         add(kind, row, 12, 'A origem identifica o aprovador por CPF/nome; o destino pede usuário. Deseja informar agora?')
         # Duplicate identity is a review, not an automatic merge or deletion.
-        for kind, col, label in [('USERS', 2, 'CPF'), ('EMPLOYER', 1, 'CNPJ'), ('EXPENSES', 0, 'Código da despesa')]:
+        for group in self.duplicate_users(data):
+            rows = ', '.join(str(r.row) for r in group['records'])
+            for record in group['records']:
+                add('USERS', record.row, 2, f"CPF repetido: {group['classification']}. Linhas {rows}. Compare na aba Duplicidades; nenhuma linha foi removida.", 'Erro')
+        for kind, col, label in [('EMPLOYER', 1, 'CNPJ'), ('EXPENSES', 0, 'Código da despesa')]:
             counts = Counter(text(r.values[col]).casefold() for r in data[kind] if r.values[col])
             for r in data[kind]:
                 if r.values[col] and counts[text(r.values[col]).casefold()] > 1:
