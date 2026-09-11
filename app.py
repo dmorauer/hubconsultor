@@ -153,6 +153,38 @@ class App(tk.Tk):
         ttk.Button(bar, text='Aplicar categoria exibida', command=lambda: self.apply_normalizations(all_rows=True)).pack(side='right')
         ttk.Button(bar, text='Aplicar selecionadas', command=self.apply_normalizations).pack(side='right', padx=8)
         self.normalizations_tree = self.tree(self.normalizations_tab, [('kind', 'Carga', 150), ('row', 'Linha origem', 90), ('field', 'Campo', 210), ('before', 'Origem', 290), ('after', 'Proposta', 290)])
+        self.catalog_tab = ttk.Frame(self.tabs, padding=10)
+        self.tabs.add(self.catalog_tab, text='Sugestões de preenchimento')
+        ttk.Label(self.catalog_tab, text='Correspondências dos cadastros desta planilha. Alternativas podem aparecer para o mesmo registro.\nCentros de custo só são sugeridos quando a unidade está identificada por CNPJ ou código exato. Nada é aplicado automaticamente.', wraplength=1050).pack(anchor='w')
+        ttk.Button(self.catalog_tab, text='Revisar sugestão selecionada', command=self.review_catalog).pack(anchor='e', pady=8)
+        self.catalog_tree = self.tree(self.catalog_tab, [('kind', 'Carga', 145), ('row', 'Linha', 65), ('before', 'Atual', 280), ('after', 'Proposta', 280), ('reference', 'Cadastro de referência', 220), ('reason', 'Motivo', 390)])
+        self.catalog_tree.configure(selectmode='browse')
+        self.catalog_tree.bind('<Double-1>', lambda e: self.review_catalog())
+
+    def refresh_catalog(self):
+        self.catalog_tree.delete(*self.catalog_tree.get_children())
+        self.catalog_items = {}
+        for index, proposal in enumerate(self.project.catalog_suggestions()):
+            key = str(index)
+            self.catalog_items[key] = proposal
+            def describe(values):
+                return ' | '.join(f'{self.project.headers[proposal["kind"]][col]}: {text(value) or "(vazio)"}' for col, value in values.items())
+            self.catalog_tree.insert('', 'end', iid=key, values=[LABELS[proposal['kind']], proposal['row'], describe(proposal['before']), describe(proposal['changes']), proposal['reference'], proposal['reason']])
+
+    def review_catalog(self):
+        selection = self.catalog_tree.selection()
+        if not selection:
+            return
+        proposal = self.catalog_items[selection[0]]
+        details = '\n'.join(f'{self.project.headers[proposal["kind"]][col]}: {text(proposal["before"][col]) or "(vazio)"} → {value}' for col, value in proposal['changes'].items())
+        if not messagebox.askyesno('Confirmar preenchimento', f"{LABELS[proposal['kind']]} — linha {proposal['row']}\n{proposal['reference']}\n{proposal['reason']}\n\n{details}\n\nDeseja aplicar esta sugestão?"):
+            return
+        try:
+            self.project.accept_catalog_suggestion(proposal)
+            self.refresh()
+        except ValueError as exc:
+            messagebox.showerror('Revisão alterada', str(exc))
+            self.refresh()
 
     def refresh_normalizations(self):
         self.normalizations_tree.delete(*self.normalizations_tree.get_children())
@@ -289,6 +321,7 @@ class App(tk.Tk):
         self.refresh_domains()
         self.refresh_duplicates()
         self.refresh_normalizations()
+        self.refresh_catalog()
         self.status.set('Decisões aplicadas somente nesta revisão. Arquivos originais preservados. Exportação pendente.' if self.project.history else 'Análise concluída. Revise as pendências ou exporte um rascunho para conferência.')
 
     def refresh_overview(self):

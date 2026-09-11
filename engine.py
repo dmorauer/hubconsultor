@@ -11,6 +11,7 @@ import unicodedata
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, date
+from difflib import SequenceMatcher
 from pathlib import Path
 
 import openpyxl
@@ -272,6 +273,69 @@ class Project:
                         proposals.append(dict(kind=kind, row=record.row, col=col, category=category,
                                               before=before, after=after))
         return proposals
+
+    def catalog_suggestions(self):
+        data = self.effective()
+        proposals = []
+        companies = data['EMPLOYER']
+
+        def similarity(left, right):
+            a, b = norm(left), norm(right)
+            return SequenceMatcher(None, a, b).ratio() if a and b else 0
+
+        def company_matches(value):
+            if not text(value):
+                return []
+            exact = [r for r in companies if text(value) in
+                     (text(r.values[1]), text(r.values[6])) and text(r.values[1])]
+            if exact:
+                return exact
+            return [r for r in companies if text(r.values[1]) and similarity(value, r.values[0]) >= .85]
+
+        def add(record, changes, reference, reason):
+            changes = {col: value for col, value in changes.items()
+                       if text(record.values[col]) != text(value)}
+            if changes:
+                proposals.append(dict(kind=record.kind, row=record.row,
+                    before={col: record.values[col] for col in changes}, changes=changes,
+                    reference=f'{SHEETS[reference.kind]} — linha {reference.row}', reason=reason))
+
+        for kind, col in [('USERS', 9), ('CUST', 4)]:
+            for record in data[kind]:
+                value = record.values[col]
+                for company in company_matches(value):
+                    add(record, {col: company.values[1]}, company,
+                        f'Unidade: {company.values[0]}. Correspondência por código ou nome; confirme a identificação.')
+
+        for record in data['USERS']:
+            matches = company_matches(record.values[9])
+            # Never select a cost center using an inferred/ambiguous company.
+            exact_companies = {text(r.values[1]) for r in matches if text(record.values[9]) in
+                               (text(r.values[1]), text(r.values[6]))}
+            if len(exact_companies) != 1:
+                continue
+            company = next(iter(exact_companies))
+            candidates = []
+            for cost in data['CUST']:
+                cost_companies = {text(r.values[1]) for r in company_matches(cost.values[4])
+                                  if text(cost.values[4]) in (text(r.values[1]), text(r.values[6]))}
+                if cost_companies == {company} and text(cost.values[1]) and text(cost.values[2]):
+                    candidates.append(cost)
+            code, description = text(record.values[10]), text(record.values[11])
+            exact = [c for c in candidates if code and code == text(c.values[1])]
+            chosen = exact or [c for c in candidates if similarity(description, c.values[2]) >= .85]
+            for cost in chosen:
+                add(record, {10: cost.values[1], 11: cost.values[2]}, cost,
+                    'Código exato na mesma unidade.' if exact else
+                    'Descrição semelhante na mesma unidade; confira antes de aplicar.')
+        return proposals
+
+    def accept_catalog_suggestion(self, proposal):
+        if proposal not in self.catalog_suggestions():
+            raise ValueError('A sugestão mudou. Atualize a análise antes de confirmar.')
+        for col, value in proposal['changes'].items():
+            self.set_value(proposal['kind'], [proposal['row']], col, value)
+            self.history[-1][4] = proposal['before'][col]
 
     def accept_normalizations(self, preview):
         current = self.normalizations()
