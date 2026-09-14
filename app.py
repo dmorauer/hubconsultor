@@ -419,6 +419,18 @@ class App(tk.Tk):
             messagebox.showinfo('Revisar', 'Selecione uma ou mais pendências.')
             return
         first = selected[0]
+        normalizations = [i for i in selected if i.message.startswith('Normalização de ')]
+        if normalizations:
+            keys = {(i.kind, i.row, i.col) for i in normalizations}
+            proposals = [p for p in self.project.normalizations() if (p['kind'], p['row'], p['col']) in keys]
+            if proposals:
+                self.normalization_category.set(proposals[0]['category'])
+                self.refresh_normalizations()
+                visible = [key for key, p in self.normalization_items.items() if (p['kind'], p['row'], p['col']) in keys]
+                self.normalizations_tree.selection_set(visible)
+                self.tabs.select(self.normalizations_tab)
+                self.status.set('Confira a proposta individual de cada célula e clique em Aplicar selecionadas. Outras categorias devem ser revisadas separadamente.')
+            return
         if first.col is None or not first.row:
             messagebox.showinfo('Revisar na origem', first.message + '\n\nRevise a planilha de origem e carregue novamente, se necessário.')
             return
@@ -436,6 +448,9 @@ class App(tk.Tk):
         self.edit_dialog(selected[0].kind, [r.row for r in selected], None)
 
     def edit_dialog(self, kind, rows, col):
+        if kind == 'USERS' and col == 2 and len(set(rows)) > 1:
+            messagebox.showinfo('CPF individual', 'Selecione apenas um registro para editar o CPF. Para normalizar documentos, use Correções em lote; cada linha conserva seu próprio CPF.')
+            return
         win = tk.Toplevel(self)
         win.title('Decisão de preenchimento')
         win.geometry('740x335')
@@ -452,13 +467,13 @@ class App(tk.Tk):
         value = tk.StringVar()
         control = ttk.Combobox(frame, textvariable=value, width=80)
         control.pack(fill='x', pady=14)
-        note = ttk.Label(frame, text='A decisão vale apenas para as linhas selecionadas. Campo vazio mantém a pendência se for obrigatório.', wraplength=680, style='Sub.TLabel')
+        note = ttk.Label(frame, text='O valor informado será aplicado IGUAL a todas as linhas selecionadas. Isto não é uma normalização. Para preservar valores individuais, use Correções em lote.' if len(rows) > 1 else 'A decisão vale apenas para a linha selecionada. Campo vazio mantém a pendência se for obrigatório.', wraplength=680, style='Sub.TLabel')
         note.pack(anchor='w')
         def configure(_event=None):
             c = self.project.headers[kind].index(selected_col.get())
             r = next(r for r in self.analysis.records[kind] if r.row == rows[0])
             v = r.values[c]
-            value.set(v.strftime('%d/%m/%Y') if isinstance(v, datetime) else text(v))
+            value.set('' if len(rows) > 1 else v.strftime('%d/%m/%Y') if isinstance(v, datetime) else text(v))
             control.configure(values=self.project.choices(kind, rows[0], c), show='*' if kind == 'USERS' and c == 8 else '')
         select.bind('<<ComboboxSelected>>', configure)
         configure()

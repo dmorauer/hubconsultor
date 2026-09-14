@@ -347,6 +347,8 @@ class Project:
             self.history[-1][4] = p['before']
 
     def set_value(self, kind, rows, col, value):
+        if kind == 'USERS' and col == 2 and len(set(rows)) > 1:
+            raise ValueError('CPF é individual. Para normalizar vários CPFs, use Correções em lote: cada linha mantém seu próprio documento.')
         if kind not in KINDS or not 0 <= col < WIDTHS[kind]:
             raise ValueError('Campo de destino inválido.')
         known = {r.row for r in self.records[kind]}
