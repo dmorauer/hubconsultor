@@ -4,6 +4,8 @@ import argparse
 import json
 import os
 import sys
+import re
+import unicodedata
 import tkinter as tk
 from datetime import datetime
 from pathlib import Path
@@ -271,10 +273,29 @@ class App(tk.Tk):
 
     @staticmethod
     def configure_columns(tree, columns):
+        tree._sort_column = None
+        tree._sort_descending = False
+        tree._column_labels = {key: label for key, label, _ in columns}
         tree.configure(columns=[c[0] for c in columns])
         for key, label, width in columns:
-            tree.heading(key, text=label)
+            tree.heading(key, text=label, command=lambda col=key: App.sort_column(tree, col))
             tree.column(key, width=width, minwidth=60, stretch=False)
+
+    @staticmethod
+    def sort_column(tree, column):
+        descending = not tree._sort_descending if tree._sort_column == column else False
+        def sort_key(item):
+            value = text(tree.set(item, column))
+            folded = unicodedata.normalize('NFKD', value.casefold())
+            folded = ''.join(c for c in folded if not unicodedata.combining(c))
+            # Natural ordering keeps source lines 2, 10, 100 in numeric order.
+            return tuple((1, int(part)) if part.isdigit() else (0, part)
+                         for part in re.split(r'([0-9]+)', folded))
+        for index, item in enumerate(sorted(tree.get_children(''), key=sort_key, reverse=descending)):
+            tree.move(item, '', index)
+        tree._sort_column, tree._sort_descending = column, descending
+        for key, label in tree._column_labels.items():
+            tree.heading(key, text=label + ((' ▼' if descending else ' ▲') if key == column else ''))
 
     def browse_source(self):
         path = filedialog.askopenfilename(title='Planilha preenchida pelo cliente', filetypes=[('Planilha Excel', '*.xlsx')])
