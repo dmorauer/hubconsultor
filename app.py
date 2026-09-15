@@ -469,6 +469,9 @@ class App(tk.Tk):
         self.edit_dialog(selected[0].kind, [r.row for r in selected], None)
 
     def edit_dialog(self, kind, rows, col):
+        if kind == 'USERS' and col == 5:
+            self.review_integration(rows)
+            return
         if kind == 'USERS' and col == 2 and len(set(rows)) > 1:
             messagebox.showinfo('CPF individual', 'Selecione apenas um registro para editar o CPF. Para normalizar documentos, use Correções em lote; cada linha conserva seu próprio CPF.')
             return
@@ -513,6 +516,43 @@ class App(tk.Tk):
         actions.pack(side='bottom', fill='x')
         ttk.Button(actions, text='Decidir depois', command=win.destroy).pack(side='left')
         ttk.Button(actions, text='Aplicar decisão', style='Primary.TButton', command=apply).pack(side='right')
+
+    def review_integration(self, rows):
+        preview = self.project.integration_suggestions(rows)
+        win = tk.Toplevel(self)
+        win.title('Concatenar códigos de integração')
+        win.geometry('1180x580')
+        win.transient(self)
+        win.grab_set()
+        frame = ttk.Frame(win, padding=16)
+        frame.pack(fill='both', expand=True)
+        ttk.Label(frame, text='Padrão sugerido: 0.CÓDIGOEXTRAFRUTI.1.CÓDIGOCASAFRUTI', font=('Segoe UI', 12, 'bold')).pack(anchor='w')
+        ttk.Label(frame, text='Cada linha usa seus próprios códigos. Confira a proposta e selecione os registros que deseja aplicar.\nCódigos incompletos ficam pendentes. Zeros à esquerda existentes como texto são preservados.', wraplength=1100).pack(anchor='w', pady=8)
+        actions = ttk.Frame(frame)
+        actions.pack(side='bottom', fill='x', pady=10)
+        table = self.tree(frame, [('row', 'Linha', 60), ('name', 'Nome', 230), ('extra', 'Extrafruti', 120), ('casa', 'Casafruti', 120), ('before', 'Atual', 160), ('after', 'Proposta', 230), ('note', 'Situação', 320)])
+        items = {}
+        for p in preview:
+            key = str(p['row'])
+            items[key] = p
+            table.insert('', 'end', iid=key, values=[p[k] for k in ('row', 'name', 'extra', 'casa', 'before', 'after', 'note')])
+        table.selection_set([str(p['row']) for p in preview if p['after']])
+        def apply():
+            selected = set(table.selection())
+            chosen = [p for p in preview if str(p['row']) in selected]
+            if not chosen or any(not p['after'] for p in chosen):
+                messagebox.showinfo('Selecionar propostas', 'Selecione apenas registros com proposta válida.', parent=win)
+                return
+            if not messagebox.askyesno('Confirmar concatenação', f'Aplicar as {len(chosen)} propostas selecionadas? Cada registro receberá o código exibido na sua linha.', parent=win):
+                return
+            try:
+                self.project.accept_integration_suggestions(chosen)
+                win.destroy()
+                self.refresh()
+            except ValueError as exc:
+                messagebox.showerror('Proposta não aplicada', str(exc), parent=win)
+        ttk.Button(actions, text='Decidir depois', command=win.destroy).pack(side='left')
+        ttk.Button(actions, text='Confirmar selecionadas', style='Primary.TButton', command=apply).pack(side='right')
 
     def review_email(self):
         selected = self.emails_tree.selection()

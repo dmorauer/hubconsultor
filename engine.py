@@ -362,6 +362,30 @@ class Project:
                                  '[oculto]' if kind == 'USERS' and col == 8 else previous,
                                  '[oculto]' if kind == 'USERS' and col == 8 else value])
 
+    def integration_suggestions(self, rows):
+        proposals = []
+        for record in self.effective()['USERS']:
+            if record.row not in rows:
+                continue
+            source = {norm(k): v for k, v in record.source.items()}
+            extra = text(source.get(norm('Código de integração Extrafruti')))
+            casa = text(source.get(norm('Código de integração Casafruti')))
+            valid = bool(extra and casa and not any(c in extra + casa for c in '.\r\n')
+                         and not extra.startswith('=') and not casa.startswith('='))
+            proposals.append(dict(row=record.row, name=text(record.values[0]),
+                extra=extra, casa=casa, before=record.values[5],
+                after=f'0.{extra}.1.{casa}' if valid else '',
+                note='Pronto para confirmar' if valid else 'Revise na origem: faltam códigos ou contêm ponto, fórmula ou quebra de linha.'))
+        return proposals
+
+    def accept_integration_suggestions(self, preview):
+        current = self.integration_suggestions([p['row'] for p in preview])
+        if not preview or preview != current or any(not p['after'] for p in preview):
+            raise ValueError('A proposta mudou ou há códigos inválidos. Reabra a revisão.')
+        for proposal in preview:
+            self.set_value('USERS', [proposal['row']], 5, proposal['after'])
+            self.history[-1][4] = proposal['before']
+
     def confirm_domain(self, company, domain):
         domain = domain.strip().lower().lstrip('@')
         if not valid_domain(domain):
