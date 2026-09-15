@@ -26,7 +26,7 @@ Aplicativo Python local para transformar a planilha preenchida pelo cliente nos 
 - Campos obrigatórios, opções de cabeçalho, formato de CPF e e-mail e duplicidades são verificados.
 - Havendo dois códigos de integração, nenhum é escolhido automaticamente. Havendo apenas um, ele é copiado; a unidade continua dependente da informação da origem ou da decisão do usuário.
 - E-mails repetidos são comparados sem diferenças entre maiúsculas/minúsculas e espaços externos.
-- Sugestão: primeiro nome + último sobrenome sem acentos + domínio confirmado da unidade. Havendo colisão, um sufixo numérico é proposto, sem aplicação automática.
+- Sugestão: CPF com 11 dígitos, sem pontuação, + domínio confirmado da unidade. Havendo colisão, a sugestão fica pendente de revisão manual, sem acrescentar sufixos ao CPF.
 - Enquanto o domínio da unidade não estiver confirmado, a sugestão baseada no e-mail original é apenas provisória e não pode ser aceita pelo botão de sugestões.
 - Campos sem equivalente no destino, incluindo políticas de despesas, são preservados no relatório de origem.
 - Fórmulas em campos de origem não são executadas. Relatórios gravam textos como valores literais.

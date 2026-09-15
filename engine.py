@@ -443,21 +443,19 @@ class Project:
             company = company_refs.get(text(v[9]), text(v[9]))
             confirmed = company in self.domains
             domain = self.domains.get(company, text(v[3]).rsplit('@', 1)[-1].lower())
-            parts = re.findall(r'[a-z0-9]+', unicodedata.normalize('NFKD', text(v[0])).encode('ascii', 'ignore').decode().lower())
+            cpf = document(v[2])
             proposed = ''
-            note = 'Primeiro nome + último sobrenome.'
-            if len(parts) >= 2 and valid_domain(domain):
-                base = parts[0] + '.' + parts[-1]
+            note = 'CPF sem pontuação + domínio da empresa.'
+            if re.fullmatch(r'[0-9]{11}', cpf) and valid_domain(domain):
+                base = cpf
                 proposed = base + '@' + domain
                 if proposed.casefold() in reserved:
-                    suffix = 2
-                    while f'{base}{suffix}@{domain}' in reserved:
-                        suffix += 1
-                    proposed = f'{base}{suffix}@{domain}'
-                    note += ' Sufixo sugerido para evitar colisão.'
-                reserved.add(proposed.casefold())
+                    proposed = ''
+                    note += ' Endereço já utilizado ou proposto; revise o CPF e o e-mail individualmente.'
+                if proposed:
+                    reserved.add(proposed.casefold())
             else:
-                note = 'Nome ou domínio insuficiente; informe o endereço manualmente.'
+                note = 'CPF deve conter 11 dígitos e o domínio deve ser válido; revise os dados antes de sugerir o endereço.'
             if not confirmed:
                 note += ' Domínio original provisório; confirme a unidade e seu domínio antes de aceitar.'
             result.suggestions.append(Suggestion(r.row, text(v[0]), text(v[3]), proposed, company, domain, confirmed, note))
@@ -621,7 +619,7 @@ class Project:
               [[kind, r.row, i + 2] for kind, records in analysis.records.items() for i, r in enumerate(records)])
         sheet('Regras', ['Regra', 'Comportamento'], [
             ['Ambiguidade', 'Perguntar se o usuário deseja decidir agora; adiar mantém a pendência.'],
-            ['E-mail repetido', 'Primeiro nome + último sobrenome sem acentos, com domínio confirmado da unidade. Colisão gera sufixo sugerido.'],
+            ['E-mail repetido', 'CPF com 11 dígitos, sem pontuação, com domínio confirmado da unidade. Colisões exigem revisão manual; nenhum sufixo é acrescentado ao CPF.'],
             ['Exportação', 'Pendências permitem somente rascunho explícito. Nenhuma linha é removida automaticamente.'],
             ['Escopo', 'Layout e validações locais. Sem consulta ao ERP, sem verificação de caixa postal ou importação no Paytrack.'],
             ['Documentos', 'CPF: formato com 11 dígitos. Não consulta situação cadastral nem valida dígitos verificadores nesta versão.'],
