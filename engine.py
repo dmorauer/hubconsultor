@@ -542,6 +542,55 @@ class Project:
             return [f'{text(v)} | {k}' for k, v in record.source.items() if norm(k).startswith('codigodeintegracao') and v is not None]
         return []
 
+    def recommendation_batch(self, categories, pattern, approve_domains=False):
+        candidates = []
+        def add(category, kind, row, col, before, after):
+            if isinstance(after, datetime):
+                after = after.strftime('%Y-%m-%d')
+            candidates.append(dict(category=category, kind=kind, row=row, col=col, before=before, after=after))
+        for p in self.normalizations():
+            if p['category'] not in categories:
+                continue
+            expected = 11 if p['kind'] == 'USERS' and p['col'] == 2 else 14 if (p['kind'], p['col']) in [('EMPLOYER', 1), ('USERS', 9), ('CUST', 4)] else None
+            if expected and not re.fullmatch(r'[0-9]{%d}' % expected, text(p['after'])):
+                continue
+            add(p['category'], p['kind'], p['row'], p['col'], p['before'], p['after'])
+        if 'E-mails' in categories:
+            for s in self.analyze().suggestions:
+                if email_valid(s.proposed) and (s.confirmed_domain or approve_domains):
+                    # Email replacement supersedes whitespace-only normalization for the same cell.
+                    candidates = [p for p in candidates if (p['kind'], p['row'], p['col']) != ('USERS', s.row, 3)]
+                    add('E-mails', 'USERS', s.row, 3, s.original, s.proposed)
+        if 'Preenchimento' in categories:
+            proposals = self.catalog_suggestions()
+            counts = Counter((p['kind'], p['row']) for p in proposals)
+            for p in proposals:
+                if counts[p['kind'], p['row']] == 1 and 'semelhante' not in p['reason'] and 'por código ou nome' not in p['reason']:
+                    for col, value in p['changes'].items():
+                        add('Preenchimento', p['kind'], p['row'], col, p['before'][col], value)
+        if 'Integração' in categories:
+            rows = [r.row for r in self.effective()['USERS'] if not text(r.values[5])]
+            for p in self.integration_suggestions(rows, pattern):
+                if p['after']:
+                    add('Integração', 'USERS', p['row'], 5, p['before'], p['after'])
+        counts = Counter((p['kind'], p['row'], p['col']) for p in candidates)
+        return [p for p in candidates if counts[p['kind'], p['row'], p['col']] == 1]
+
+    def accept_recommendation_batch(self, preview, categories, pattern, approve_domains=False):
+        if not preview or preview != self.recommendation_batch(categories, pattern, approve_domains):
+            raise ValueError('As recomendações mudaram. Atualize a prévia antes de confirmar.')
+        decisions, history = copy.deepcopy(self.decisions), copy.deepcopy(self.history)
+        try:
+            for p in preview:
+                self.set_value(p['kind'], [p['row']], p['col'], p['after'])
+                self.history[-1][4] = p['before']
+            if approve_domains and any(p['category'] == 'E-mails' for p in preview):
+                self.history.append([datetime.now().isoformat(timespec='seconds'), 'USERS', '', 'Domínios exibidos aprovados no lote geral', '', 'Confirmado pelo usuário'])
+        except Exception:
+            self.decisions, self.history = decisions, history
+            raise
+        return len(preview)
+
     def save_session(self, path):
         if Path(path).resolve() in [self.source, *self.templates.values()]:
             raise ValueError('A revisão deve ser salva em um arquivo separado da origem e dos modelos.')

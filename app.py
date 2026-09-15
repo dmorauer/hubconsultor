@@ -80,6 +80,7 @@ class App(tk.Tk):
         self.load_button.pack(side='left')
         ttk.Button(toolbar, text='Abrir revisão', command=self.open_session).pack(side='left', padx=7)
         ttk.Button(toolbar, text='Salvar revisão', command=self.save_session).pack(side='left')
+        ttk.Button(toolbar, text='Aplicar recomendações em lote', command=self.review_recommendations).pack(side='left', padx=7)
         ttk.Button(toolbar, text='Exportar cargas', style='Primary.TButton', command=self.export_files).pack(side='right')
         ttk.Label(outer, textvariable=self.summary, font=('Segoe UI', 11, 'bold')).pack(anchor='w', pady=(0, 10))
         ttk.Label(outer, textvariable=self.status, style='Sub.TLabel', wraplength=1150).pack(side='bottom', anchor='w', pady=(12, 0))
@@ -571,6 +572,64 @@ class App(tk.Tk):
                 messagebox.showerror('Proposta não aplicada', str(exc), parent=win)
         ttk.Button(actions, text='Decidir depois', command=win.destroy).pack(side='left')
         ttk.Button(actions, text='Confirmar selecionadas', style='Primary.TButton', command=apply).pack(side='right')
+
+    def review_recommendations(self):
+        if not self.project:
+            messagebox.showinfo('Recomendações', 'Analise uma planilha primeiro.')
+            return
+        win = tk.Toplevel(self)
+        win.title('Aplicar recomendações em lote')
+        win.geometry('1180x680')
+        win.transient(self)
+        win.grab_set()
+        frame = ttk.Frame(win, padding=16)
+        frame.pack(fill='both', expand=True)
+        ttk.Label(frame, text='Escolha as categorias e confirme uma vez. Cada célula recebe sua própria proposta.\nCasos ambíguos, documentos longos e conflitos permanecem pendentes.', wraplength=1100).pack(anchor='w')
+        bar = ttk.Frame(frame)
+        bar.pack(fill='x', pady=10)
+        categories = {name: tk.BooleanVar(value=True) for name in ['Espaços', 'Documentos', 'Datas', 'Sim/Não', 'Sexo', 'E-mails', 'Preenchimento', 'Integração']}
+        pattern = tk.StringVar(value='0.{EXTRAFRUTI}.1.{CASAFRUTI}')
+        approved = tk.BooleanVar(value=False)
+        summary = tk.StringVar()
+        for name, variable in categories.items():
+            ttk.Checkbutton(bar, text=name, variable=variable).pack(side='left')
+        ttk.Label(frame, text='Formato da integração (somente campos de destino vazios):').pack(anchor='w')
+        ttk.Entry(frame, textvariable=pattern).pack(fill='x', pady=5)
+        ttk.Checkbutton(frame, text='Confirmo o uso dos domínios exibidos nas propostas de e-mail, mesmo sem domínio confirmado da unidade.', variable=approved).pack(anchor='w')
+        ttk.Label(frame, textvariable=summary, wraplength=1100).pack(anchor='w', pady=8)
+        actions = ttk.Frame(frame)
+        actions.pack(side='bottom', fill='x', pady=8)
+        table = self.tree(frame, [('category', 'Categoria', 130), ('kind', 'Carga', 130), ('row', 'Linha', 65), ('field', 'Campo', 200), ('before', 'Atual / origem', 250), ('after', 'Proposta', 270)])
+        preview = []
+        def refresh(*_):
+            nonlocal preview
+            table.delete(*table.get_children())
+            selected = [name for name, var in categories.items() if var.get()]
+            try:
+                preview = self.project.recommendation_batch(selected, pattern.get(), approved.get())
+                counts = {name: sum(p['category'] == name for p in preview) for name in selected}
+                summary.set(f'{len(preview)} células propostas. ' + ' | '.join(f'{name}: {n}' for name, n in counts.items()) + '\nE-mails sem domínio confirmado só entram após marcar a confirmação acima. Correspondências aproximadas ficam para revisão individual.')
+            except ValueError as exc:
+                preview = []
+                summary.set(str(exc))
+            for p in preview:
+                table.insert('', 'end', values=[p['category'], LABELS[p['kind']], p['row'], self.project.headers[p['kind']][p['col']], p['before'], p['after']])
+            confirm.configure(state='normal' if preview else 'disabled')
+        def apply():
+            try:
+                count = self.project.accept_recommendation_batch(preview, [name for name, var in categories.items() if var.get()], pattern.get(), approved.get())
+                win.destroy()
+                self.refresh()
+                self.status.set(f'{count} correções aplicadas. Revise as pendências restantes e exporte para salvar as cargas.')
+            except ValueError as exc:
+                messagebox.showerror('Recomendações alteradas', str(exc), parent=win)
+                refresh()
+        ttk.Button(actions, text='Cancelar', command=win.destroy).pack(side='left')
+        confirm = ttk.Button(actions, text='Confirmar todas as propostas exibidas', command=apply, style='Primary.TButton')
+        confirm.pack(side='right')
+        for var in [*categories.values(), pattern, approved]:
+            var.trace_add('write', refresh)
+        refresh()
 
     def review_email(self):
         selected = self.emails_tree.selection()
