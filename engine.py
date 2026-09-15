@@ -225,16 +225,21 @@ class Project:
                     pass
             return raw
         value = text(value)
-        if (kind == 'USERS' and col == 2) or (kind == 'EMPLOYER' and col in (1, 13)):
+        if (kind == 'USERS' and col == 2) or (kind == 'EMPLOYER' and col == 1):
+            digits = re.sub(r'[^0-9]', '', value)
+            return digits.zfill(11 if kind == 'USERS' else 14) if digits else ''
+        if kind == 'USERS' and col == 1:
+            return value[0].upper() if value and value[0].upper() in ('M', 'F') else value
+        if kind == 'EMPLOYER' and col == 13:
             return document(value)
         if col in ENUMS[kind]:
             return {'SIM': 'S', 'NÃO': 'N', 'NAO': 'N'}.get(value.upper(), value.upper())
         if kind == 'EMPLOYER' and col == 19:
             return 'BRA' if value.upper() == 'BRASIL' else value.upper()
         if kind == 'CUST' and col == 4:
-            return document(value) if re.fullmatch(r'[\d.\-/\s]+', value) else value
+            return document(value).zfill(14) if re.fullmatch(r'[0-9.\-/\s]+', value) and document(value) else value
         if kind == 'USERS' and col == 9:
-            return document(value) if re.fullmatch(r'[\d.\-/\s]+', value) else value
+            return document(value).zfill(14) if re.fullmatch(r'[0-9.\-/\s]+', value) and document(value) else value
         return value
 
     def effective(self):
@@ -258,8 +263,11 @@ class Project:
                     if kind == 'USERS' and col == 4:
                         if isinstance(before, str) and isinstance(after, datetime):
                             category = 'Datas'
+                    elif kind == 'USERS' and col == 1:
+                        if text(before) != after and after in ('M', 'F'):
+                            category = 'Sexo'
                     elif (kind == 'USERS' and col in (2, 9)) or (kind == 'EMPLOYER' and col in (1, 13)) or (kind == 'CUST' and col == 4):
-                        if isinstance(before, str) and before != after:
+                        if str(before) != after and after:
                             category = 'Documentos'
                     elif ENUMS[kind].get(col) == ('S', 'N'):
                         if isinstance(before, str) and before != after and after in ('S', 'N'):
@@ -362,7 +370,12 @@ class Project:
                                  '[oculto]' if kind == 'USERS' and col == 8 else previous,
                                  '[oculto]' if kind == 'USERS' and col == 8 else value])
 
-    def integration_suggestions(self, rows):
+    def integration_suggestions(self, rows, pattern='0.{EXTRAFRUTI}.1.{CASAFRUTI}'):
+        if not pattern.strip() or any(c in pattern for c in '\r\n') or pattern.startswith('='):
+            raise ValueError('Informe um formato de integração válido, em uma única linha.')
+        remainder = pattern.replace('{EXTRAFRUTI}', '').replace('{CASAFRUTI}', '')
+        if '{' in remainder or '}' in remainder or not any(token in pattern for token in ('{EXTRAFRUTI}', '{CASAFRUTI}')):
+            raise ValueError('Use {EXTRAFRUTI} e/ou {CASAFRUTI} para representar os códigos de cada pessoa.')
         proposals = []
         for record in self.effective()['USERS']:
             if record.row not in rows:
@@ -370,16 +383,16 @@ class Project:
             source = {norm(k): v for k, v in record.source.items()}
             extra = text(source.get(norm('Código de integração Extrafruti')))
             casa = text(source.get(norm('Código de integração Casafruti')))
-            valid = bool(extra and casa and not any(c in extra + casa for c in '.\r\n')
-                         and not extra.startswith('=') and not casa.startswith('='))
+            used = [value for token, value in (('{EXTRAFRUTI}', extra), ('{CASAFRUTI}', casa)) if token in pattern]
+            valid = all(value and not any(c in value for c in '\r\n') and not value.startswith('=') for value in used)
             proposals.append(dict(row=record.row, name=text(record.values[0]),
                 extra=extra, casa=casa, before=record.values[5],
-                after=f'0.{extra}.1.{casa}' if valid else '',
-                note='Pronto para confirmar' if valid else 'Revise na origem: faltam códigos ou contêm ponto, fórmula ou quebra de linha.'))
+                after=pattern.replace('{EXTRAFRUTI}', extra).replace('{CASAFRUTI}', casa) if valid else '',
+                note='Pronto para confirmar' if valid else 'Revise na origem: faltam códigos usados no formato ou contêm fórmula ou quebra de linha.'))
         return proposals
 
-    def accept_integration_suggestions(self, preview):
-        current = self.integration_suggestions([p['row'] for p in preview])
+    def accept_integration_suggestions(self, preview, pattern='0.{EXTRAFRUTI}.1.{CASAFRUTI}'):
+        current = self.integration_suggestions([p['row'] for p in preview], pattern)
         if not preview or preview != current or any(not p['after'] for p in preview):
             raise ValueError('A proposta mudou ou há códigos inválidos. Reabra a revisão.')
         for proposal in preview:
@@ -421,12 +434,14 @@ class Project:
                     if v[c] and v[c] not in options:
                         add(kind, row, c, 'Valor aceito: ' + ', '.join(options), 'Erro')
                 if kind == 'EMPLOYER':
+                    if v[1] and not re.fullmatch(r'[0-9]{14}', str(v[1])):
+                        add(kind, row, 1, 'CNPJ deve conter exatamente 14 dígitos; valores maiores não são cortados.', 'Erro')
                     for c in (4, 8):
                         if v[c] and not email_valid(v[c]):
                             add(kind, row, c, 'Formato de e-mail inválido.', 'Erro')
                 elif kind == 'USERS':
                     if v[2] and not re.fullmatch(r'\d{11}', str(v[2])):
-                        add(kind, row, 2, 'CPF deve conter 11 dígitos; não completar zeros por suposição.', 'Erro')
+                        add(kind, row, 2, 'CPF deve conter exatamente 11 dígitos; valores maiores não são cortados.', 'Erro')
                     if v[3] and not email_valid(v[3]):
                         add(kind, row, 3, 'Formato de e-mail inválido.', 'Erro')
                     if v[4] and not isinstance(v[4], datetime):

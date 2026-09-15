@@ -149,7 +149,7 @@ class App(tk.Tk):
         bar = ttk.Frame(self.normalizations_tab)
         bar.pack(fill='x', pady=8)
         self.normalization_category = tk.StringVar(value='Espaços')
-        categories = ttk.Combobox(bar, textvariable=self.normalization_category, values=['Espaços', 'Documentos', 'Datas', 'Sim/Não'], state='readonly')
+        categories = ttk.Combobox(bar, textvariable=self.normalization_category, values=['Espaços', 'Documentos', 'Datas', 'Sim/Não', 'Sexo'], state='readonly')
         categories.pack(side='left')
         categories.bind('<<ComboboxSelected>>', lambda e: self.refresh_normalizations())
         ttk.Button(bar, text='Aplicar categoria exibida', command=lambda: self.apply_normalizations(all_rows=True)).pack(side='right')
@@ -527,6 +527,11 @@ class App(tk.Tk):
         frame = ttk.Frame(win, padding=16)
         frame.pack(fill='both', expand=True)
         ttk.Label(frame, text='Padrão sugerido: 0.CÓDIGOEXTRAFRUTI.1.CÓDIGOCASAFRUTI', font=('Segoe UI', 12, 'bold')).pack(anchor='w')
+        pattern = tk.StringVar(value='0.{EXTRAFRUTI}.1.{CASAFRUTI}')
+        ttk.Label(frame, text='Edite o formato usando {EXTRAFRUTI} e/ou {CASAFRUTI} como campos variáveis:').pack(anchor='w', pady=(8, 0))
+        ttk.Entry(frame, textvariable=pattern).pack(fill='x')
+        format_status = tk.StringVar()
+        ttk.Label(frame, textvariable=format_status).pack(anchor='w')
         ttk.Label(frame, text='Cada linha usa seus próprios códigos. Confira a proposta e selecione os registros que deseja aplicar.\nCódigos incompletos ficam pendentes. Zeros à esquerda existentes como texto são preservados.', wraplength=1100).pack(anchor='w', pady=8)
         actions = ttk.Frame(frame)
         actions.pack(side='bottom', fill='x', pady=10)
@@ -537,6 +542,19 @@ class App(tk.Tk):
             items[key] = p
             table.insert('', 'end', iid=key, values=[p[k] for k in ('row', 'name', 'extra', 'casa', 'before', 'after', 'note')])
         table.selection_set([str(p['row']) for p in preview if p['after']])
+        def update_preview(*_):
+            nonlocal preview
+            table.delete(*table.get_children())
+            try:
+                preview = self.project.integration_suggestions(rows, pattern.get())
+                format_status.set('Prévia atualizada com o formato informado.')
+            except ValueError as exc:
+                preview = []
+                format_status.set(str(exc))
+            for p in preview:
+                table.insert('', 'end', iid=str(p['row']), values=[p[k] for k in ('row', 'name', 'extra', 'casa', 'before', 'after', 'note')])
+            table.selection_set([str(p['row']) for p in preview if p['after']])
+        pattern.trace_add('write', update_preview)
         def apply():
             selected = set(table.selection())
             chosen = [p for p in preview if str(p['row']) in selected]
@@ -546,7 +564,7 @@ class App(tk.Tk):
             if not messagebox.askyesno('Confirmar concatenação', f'Aplicar as {len(chosen)} propostas selecionadas? Cada registro receberá o código exibido na sua linha.', parent=win):
                 return
             try:
-                self.project.accept_integration_suggestions(chosen)
+                self.project.accept_integration_suggestions(chosen, pattern.get())
                 win.destroy()
                 self.refresh()
             except ValueError as exc:
