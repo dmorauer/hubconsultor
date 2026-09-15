@@ -32,6 +32,15 @@ def norm(value):
     value = unicodedata.normalize('NFKD', str(value or '')).encode('ascii', 'ignore').decode()
     return re.sub(r'[^a-z0-9]', '', value.lower())
 
+def mapped_value(mapping, label):
+    """Find headers even when an uploaded workbook has damaged accent bytes."""
+    target = norm(label)
+    if target in mapping:
+        return mapping[target]
+    candidates = [value for key, value in mapping.items()
+                  if SequenceMatcher(None, target, key).ratio() >= .80]
+    return candidates[0] if len(candidates) == 1 else None
+
 def text(value):
     if value is None:
         return ''
@@ -178,7 +187,7 @@ class Project:
                     src = {text(sheet.cell(1, c.column).value): c.value for c in row[:ncols] if sheet.cell(1, c.column).value is not None}
                     def get(*labels):
                         for label in labels:
-                            col = cols.get(norm(label))
+                            col = mapped_value(cols, label)
                             if col:
                                 value = sheet.cell(row[0].row, col).value
                                 if isinstance(value, str) and value.startswith('='):
@@ -381,8 +390,8 @@ class Project:
             if record.row not in rows:
                 continue
             source = {norm(k): v for k, v in record.source.items()}
-            extra = text(source.get(norm('Código de integração Extrafruti')))
-            casa = text(source.get(norm('Código de integração Casafruti')))
+            extra = text(mapped_value(source, 'Código de integração Extrafruti'))
+            casa = text(mapped_value(source, 'Código de integração Casafruti'))
             used = [value for token, value in (('{EXTRAFRUTI}', extra), ('{CASAFRUTI}', casa)) if token in pattern]
             valid = all(value and not any(c in value for c in '\r\n') and not value.startswith('=') for value in used)
             proposals.append(dict(row=record.row, name=text(record.values[0]),
@@ -448,8 +457,10 @@ class Project:
                         add(kind, row, 4, 'Data inválida. Informe DD/MM/AAAA ou deixe o campo opcional vazio.', 'Erro')
                     elif isinstance(v[4], datetime) and v[4].date() > date.today():
                         add(kind, row, 4, 'Nascimento no futuro; confirme a data.', 'Erro')
-                    src = {norm(k): v for k, v in record.source.items()}
-                    if src.get(norm('Código de integração Casafruti')) is not None and src.get(norm('Código de integração Extrafruti')) is not None and not v[5]:
+                    src = {norm(k): value for k, value in record.source.items()}
+                    casa = mapped_value(src, 'Código de integração Casafruti')
+                    extra = mapped_value(src, 'Código de integração Extrafruti')
+                    if casa is not None and extra is not None and not v[5]:
                         add(kind, row, 5, 'Há códigos de integração Casafruti e Extrafruti. Deseja escolher agora?')
                     if any(src.get(norm(k)) for k in ['CPF Usuário aprovador', 'Nome Usuário aprovador']) and not v[12]:
                         add(kind, row, 12, 'A origem identifica o aprovador por CPF/nome; o destino pede usuário. Deseja informar agora?')
