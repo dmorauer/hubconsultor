@@ -533,7 +533,7 @@ class App(tk.Tk):
         ttk.Entry(frame, textvariable=pattern).pack(fill='x')
         format_status = tk.StringVar()
         ttk.Label(frame, textvariable=format_status).pack(anchor='w')
-        ttk.Label(frame, text='Cada linha usa seus próprios códigos. Confira a proposta e selecione os registros que deseja aplicar.\nCódigos incompletos ficam pendentes. Zeros à esquerda existentes como texto são preservados.', wraplength=1100).pack(anchor='w', pady=8)
+        ttk.Label(frame, text='Cada linha usa seus próprios códigos. Confira a proposta e selecione os registros que deseja aplicar.\nPropostas completas vêm selecionadas. Propostas parciais ficam desmarcadas para você decidir; zeros à esquerda existentes como texto são preservados.', wraplength=1100).pack(anchor='w', pady=8)
         actions = ttk.Frame(frame)
         actions.pack(side='bottom', fill='x', pady=10)
         table = self.tree(frame, [('row', 'Linha', 60), ('name', 'Nome', 230), ('extra', 'Extrafruti', 120), ('casa', 'Casafruti', 120), ('before', 'Atual', 160), ('after', 'Proposta', 230), ('note', 'Situação', 320)])
@@ -542,7 +542,7 @@ class App(tk.Tk):
             key = str(p['row'])
             items[key] = p
             table.insert('', 'end', iid=key, values=[p[k] for k in ('row', 'name', 'extra', 'casa', 'before', 'after', 'note')])
-        table.selection_set([str(p['row']) for p in preview if p['after']])
+        table.selection_set([str(p['row']) for p in preview if p['after'] and p['complete']])
         def update_preview(*_):
             nonlocal preview
             table.delete(*table.get_children())
@@ -554,7 +554,7 @@ class App(tk.Tk):
                 format_status.set(str(exc))
             for p in preview:
                 table.insert('', 'end', iid=str(p['row']), values=[p[k] for k in ('row', 'name', 'extra', 'casa', 'before', 'after', 'note')])
-            table.selection_set([str(p['row']) for p in preview if p['after']])
+            table.selection_set([str(p['row']) for p in preview if p['after'] and p['complete']])
         pattern.trace_add('write', update_preview)
         def apply():
             selected = set(table.selection())

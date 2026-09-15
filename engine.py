@@ -206,8 +206,8 @@ class Project:
                     else:
                         casa, extra = get('Código de integração Casafruti'), get('Código de integração Extrafruti')
                         code = get('Código de integração')
-                        if code is None:
-                            code = casa if casa is not None and extra is None else extra if extra is not None and casa is None else None
+                        # The two legacy columns are components of one destination field.
+                        # Keep it blank until the person reviewing chooses the concatenation.
                         values = [get('Nome completo'), get('Sexo (M ou F)'), get('CPF'), get('E-mail'), get('Data de nascimento'), code,
                                   get('Ativo (S ou N)'), get('Usuário'), get('Senha'), get('Empresa (CNPJ)'),
                                   get('Centro de custo (Cód. no ERP)'), get('Descrição centro de custo'), None, None]
@@ -393,11 +393,15 @@ class Project:
             extra = text(mapped_value(source, 'Código de integração Extrafruti'))
             casa = text(mapped_value(source, 'Código de integração Casafruti'))
             used = [value for token, value in (('{EXTRAFRUTI}', extra), ('{CASAFRUTI}', casa)) if token in pattern]
-            valid = all(value and not any(c in value for c in '\r\n') and not value.startswith('=') for value in used)
+            valid = bool(used) and any(used) and all(not any(c in value for c in '\r\n') and not value.startswith('=') for value in used if value)
+            complete = all(used)
             proposals.append(dict(row=record.row, name=text(record.values[0]),
                 extra=extra, casa=casa, before=record.values[5],
                 after=pattern.replace('{EXTRAFRUTI}', extra).replace('{CASAFRUTI}', casa) if valid else '',
-                note='Pronto para confirmar' if valid else 'Revise na origem: faltam códigos usados no formato ou contêm fórmula ou quebra de linha.'))
+                complete=complete,
+                note='Pronto para confirmar' if valid and complete else
+                     'Proposta parcial: um dos códigos está vazio. Confira ou altere o formato antes de confirmar.' if valid else
+                     'Revise na origem: não há código ou há fórmula ou quebra de linha.'))
         return proposals
 
     def accept_integration_suggestions(self, preview, pattern='0.{EXTRAFRUTI}.1.{CASAFRUTI}'):
@@ -460,8 +464,8 @@ class Project:
                     src = {norm(k): value for k, value in record.source.items()}
                     casa = mapped_value(src, 'Código de integração Casafruti')
                     extra = mapped_value(src, 'Código de integração Extrafruti')
-                    if casa is not None and extra is not None and not v[5]:
-                        add(kind, row, 5, 'Há códigos de integração Casafruti e Extrafruti. Deseja escolher agora?')
+                    if (text(casa) or text(extra)) and not v[5]:
+                        add(kind, row, 5, 'Há código(s) de integração Casafruti e/ou Extrafruti. Revise a concatenação sugerida.')
                     if any(src.get(norm(k)) for k in ['CPF Usuário aprovador', 'Nome Usuário aprovador']) and not v[12]:
                         add(kind, row, 12, 'A origem identifica o aprovador por CPF/nome; o destino pede usuário. Deseja informar agora?')
         # Duplicate identity is a review, not an automatic merge or deletion.
@@ -582,7 +586,7 @@ class Project:
         if 'Integração' in categories:
             rows = [r.row for r in self.effective()['USERS'] if not text(r.values[5])]
             for p in self.integration_suggestions(rows, pattern):
-                if p['after']:
+                if p['after'] and p['complete']:
                     add('Integração', 'USERS', p['row'], 5, p['before'], p['after'])
         counts = Counter((p['kind'], p['row'], p['col']) for p in candidates)
         return [p for p in candidates if counts[p['kind'], p['row'], p['col']] == 1]
