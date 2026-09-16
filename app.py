@@ -163,6 +163,14 @@ class App(tk.Tk):
         self.catalog_tree = self.tree(self.catalog_tab, [('kind', 'Carga', 145), ('row', 'Linha', 65), ('before', 'Atual', 280), ('after', 'Proposta', 280), ('reference', 'Cadastro de referência', 220), ('reason', 'Motivo', 390)])
         self.catalog_tree.configure(selectmode='browse')
         self.catalog_tree.bind('<Double-1>', lambda e: self.review_catalog())
+        self.decisions_tab = ttk.Frame(self.tabs, padding=10)
+        self.tabs.add(self.decisions_tab, text='Antes e depois')
+        ttk.Label(self.decisions_tab, text='Alterações confirmadas nesta revisão. Selecione uma ou mais para restaurar os valores anteriores. O arquivo de origem não é alterado.', wraplength=1050).pack(anchor='w')
+        bar = ttk.Frame(self.decisions_tab)
+        bar.pack(fill='x', pady=8)
+        ttk.Button(bar, text='Desfazer todas as alterações', command=lambda: self.undo_history(all_rows=True)).pack(side='right')
+        ttk.Button(bar, text='Desfazer selecionadas', style='Primary.TButton', command=self.undo_history).pack(side='right', padx=8)
+        self.decisions_tree = self.tree(self.decisions_tab, [('when', 'Quando', 165), ('kind', 'Carga', 145), ('row', 'Linha', 75), ('field', 'Campo', 210), ('before', 'Antes', 300), ('after', 'Depois', 300)])
 
     def refresh_catalog(self):
         self.catalog_tree.delete(*self.catalog_tree.get_children())
@@ -173,6 +181,34 @@ class App(tk.Tk):
             def describe(values):
                 return ' | '.join(f'{self.project.headers[proposal["kind"]][col]}: {text(value) or "(vazio)"}' for col, value in values.items())
             self.catalog_tree.insert('', 'end', iid=key, values=[LABELS[proposal['kind']], proposal['row'], describe(proposal['before']), describe(proposal['changes']), proposal['reference'], proposal['reason']])
+
+    def refresh_decisions(self):
+        self.decisions_tree.delete(*self.decisions_tree.get_children())
+        self.decision_items = {}
+        if not self.project:
+            return
+        for entry in reversed(self.project.reversible_history()):
+            if not entry['reversible']:
+                continue
+            key = str(entry['index'])
+            self.decision_items[key] = entry
+            kind = 'Domínios das unidades' if entry['kind'] == 'DOMINIO' else LABELS[entry['kind']]
+            self.decisions_tree.insert('', 'end', iid=key, values=[entry['when'], kind, entry['row'], entry['field'], text(entry['before']) or '(origem)', text(entry['after'])])
+
+    def undo_history(self, all_rows=False):
+        keys = self.decisions_tree.get_children() if all_rows else self.decisions_tree.selection()
+        if not keys:
+            return
+        entries = [self.decision_items[key] for key in keys]
+        message = f'Desfazer {len(entries)} alteração(ões) e restaurar os valores anteriores?\n\nO arquivo original continuará preservado.'
+        if not messagebox.askyesno('Desfazer alterações', message):
+            return
+        try:
+            self.project.undo_history([entry['index'] for entry in entries])
+            self.refresh()
+        except ValueError as exc:
+            messagebox.showerror('Não foi possível desfazer', str(exc))
+            self.refresh()
 
     def review_catalog(self):
         selection = self.catalog_tree.selection()
@@ -344,6 +380,7 @@ class App(tk.Tk):
         self.refresh_duplicates()
         self.refresh_normalizations()
         self.refresh_catalog()
+        self.refresh_decisions()
         self.status.set('Decisões aplicadas somente nesta revisão. Arquivos originais preservados. Exportação pendente.' if self.project.history else 'Análise concluída. Revise as pendências ou exporte um rascunho para conferência.')
 
     def refresh_overview(self):

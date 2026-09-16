@@ -513,8 +513,56 @@ class Project:
         companies = {r.values[1] for r in self.effective()['EMPLOYER']}
         if company not in companies:
             raise ValueError('Selecione uma unidade cadastrada na planilha.')
+        previous = self.domains.get(company, '')
         self.domains[company] = domain
-        self.history.append([datetime.now().isoformat(timespec='seconds'), 'DOMINIO', '', company, '', domain])
+        self.history.append([datetime.now().isoformat(timespec='seconds'), 'DOMINIO', '', company, previous, domain])
+
+    def reversible_history(self):
+        """Return the user decisions that can be restored to their prior value."""
+        entries = []
+        for index, entry in enumerate(self.history):
+            when, kind, row, field, before, after = entry
+            reversible = kind == 'DOMINIO' or (kind in KINDS and row not in ('', None) and field in self.headers[kind])
+            entries.append(dict(index=index, when=when, kind=kind, row=row, field=field,
+                                before=before, after=after, reversible=reversible))
+        return entries
+
+    def undo_history(self, indexes):
+        """Undo selected current decisions, preserving the original source workbook."""
+        selected = sorted({int(index) for index in indexes}, reverse=True)
+        if not selected or any(index < 0 or index >= len(self.history) for index in selected):
+            raise ValueError('Selecione decisões válidas para desfazer.')
+        entries = self.reversible_history()
+        for index in selected:
+            entry = entries[index]
+            if not entry['reversible']:
+                raise ValueError('A seleção contém um registro informativo que não representa uma alteração reversível.')
+            if entry['kind'] == 'DOMINIO':
+                if self.domains.get(entry['field'], '') != entry['after']:
+                    raise ValueError('Uma decisão mais recente alterou este domínio. Atualize a lista antes de desfazer.')
+                continue
+            key = f"{entry['kind']}:{entry['row']}"
+            col = self.headers[entry['kind']].index(entry['field'])
+            current = self.decisions.get(key, {}).get(str(col), self.original_values[key][col])
+            if self.coerce(entry['kind'], col, current) != self.coerce(entry['kind'], col, entry['after']):
+                raise ValueError('Uma decisão mais recente alterou este campo. Atualize a lista antes de desfazer.')
+        for index in selected:
+            entry = entries[index]
+            if entry['kind'] == 'DOMINIO':
+                if entry['before']:
+                    self.domains[entry['field']] = entry['before']
+                else:
+                    self.domains.pop(entry['field'], None)
+                continue
+            key = f"{entry['kind']}:{entry['row']}"
+            col = self.headers[entry['kind']].index(entry['field'])
+            if entry['before'] == '(origem)':
+                self.decisions.get(key, {}).pop(str(col), None)
+                if not self.decisions.get(key):
+                    self.decisions.pop(key, None)
+            else:
+                self.decisions.setdefault(key, {})[str(col)] = entry['before']
+        self.history = [entry for index, entry in enumerate(self.history) if index not in selected]
 
     def analyze(self):
         data = self.effective()
