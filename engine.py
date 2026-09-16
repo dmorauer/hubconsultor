@@ -89,6 +89,14 @@ def shared_strings_compatible(path):
                 continue
             inline = cell.find(q(main_ns, 'is'))
             value = ''.join(inline.itertext()) if inline is not None else ''
+            if not value:
+                # Keep template placeholders empty. Converting them to a shared
+                # empty string changes their meaning when OpenPyXL reopens them.
+                cell.attrib.pop('t', None)
+                for child in list(cell):
+                    cell.remove(child)
+                changed = True
+                continue
             index = positions.setdefault(value, len(shared))
             if index == len(shared):
                 shared.append(value)
