@@ -87,16 +87,21 @@ class App(tk.Tk):
         self.tabs = ttk.Notebook(outer)
         self.tabs.pack(fill='both', expand=True)
         self.overview_tab = ttk.Frame(self.tabs, padding=10)
+        self.readiness_tab = ttk.Frame(self.tabs, padding=10)
         self.pending_tab = ttk.Frame(self.tabs, padding=10)
         self.emails_tab = ttk.Frame(self.tabs, padding=10)
         self.data_tab = ttk.Frame(self.tabs, padding=10)
         self.domains_tab = ttk.Frame(self.tabs, padding=10)
-        for frame, label in [(self.overview_tab, 'Resumo por aba'), (self.pending_tab, 'Pendências'), (self.emails_tab, 'Sugestões de e-mail'), (self.data_tab, 'Dados de saída'), (self.domains_tab, 'Domínios das unidades')]:
+        for frame, label in [(self.overview_tab, 'Resumo por aba'), (self.readiness_tab, 'Prontidão por carga'), (self.pending_tab, 'Pendências'), (self.emails_tab, 'Sugestões de e-mail'), (self.data_tab, 'Dados de saída'), (self.domains_tab, 'Domínios das unidades')]:
             self.tabs.add(frame, text=label)
         ttk.Label(self.overview_tab, text='Clique em uma quantidade para abrir os registros correspondentes.', font=('Segoe UI', 11, 'bold')).pack(anchor='w', pady=(0, 10))
         ttk.Label(self.overview_tab, text='Erros e pendências contam ocorrências, não pessoas. Um registro pode ter mais de uma ocorrência.\nSugestões de e-mail podem corresponder aos mesmos registros com erro; não some as colunas.', wraplength=1050, style='Sub.TLabel').pack(anchor='w', pady=(0, 12))
         self.overview_tree = self.tree(self.overview_tab, [('sheet', 'Aba', 240), ('records', 'Registros', 135), ('errors', 'Erros', 135), ('suggestions', 'Sugestões', 135), ('pending', 'Pendências', 135), ('warnings', 'Avisos', 135)])
         self.overview_tree.bind('<ButtonRelease-1>', self.open_overview_cell)
+        ttk.Label(self.readiness_tab, text='A prontidão é calculada para cada carga separadamente. Pendências em Usuários não impedem a revisão de Empresas, Centros de custo ou Tipos de despesa.', wraplength=1050, style='Sub.TLabel').pack(anchor='w', pady=(0, 10))
+        ttk.Label(self.readiness_tab, text='Clique em uma carga para abrir as pendências locais.', style='Sub.TLabel').pack(anchor='w', pady=(0, 8))
+        self.readiness_tree = self.tree(self.readiness_tab, [('kind', 'Carga', 230), ('status', 'Prontidão', 180), ('records', 'Registros', 110), ('errors', 'Erros', 90), ('pending', 'Pendências', 110), ('warnings', 'Avisos', 90), ('detail', 'Detalhes', 480)])
+        self.readiness_tree.bind('<Double-1>', self.open_readiness)
         bar = ttk.Frame(self.pending_tab)
         bar.pack(fill='x', pady=(0, 8))
         ttk.Label(bar, text='Carga:').pack(side='left')
@@ -371,6 +376,7 @@ class App(tk.Tk):
             return
         self.analysis = self.project.analyze()
         self.refresh_overview()
+        self.refresh_readiness()
         data = self.analysis.records
         self.summary.set(f'{len(data["EMPLOYER"])} unidades   ·   {len(data["USERS"])} usuários   ·   {len(data["CUST"])} centros de custo   ·   {len(data["EXPENSES"])} despesas   |   {len(self.analysis.blocking)} pendências')
         self.refresh_issues()
@@ -390,6 +396,21 @@ class App(tk.Tk):
             self.overview_tree.insert('', 'end', iid=kind, values=[SHEETS[kind], len(self.analysis.records[kind]),
                 sum(i.severity == 'Erro' for i in issues), len(self.analysis.suggestions) if kind == 'USERS' else 0,
                 sum(i.severity == 'Pendente' for i in issues), sum(i.severity == 'Aviso' for i in issues)])
+
+    def refresh_readiness(self):
+        self.readiness_tree.delete(*self.readiness_tree.get_children())
+        for kind, item in self.analysis.readiness_by_kind().items():
+            self.readiness_tree.insert('', 'end', iid=kind, values=[LABELS[kind], item['status'], item['records'], item['errors'], item['pending'], item['warnings'], item['detail']])
+
+    def open_readiness(self, _event=None):
+        selected = self.readiness_tree.selection()
+        if not selected:
+            return
+        kind = selected[0]
+        self.filter.set(LABELS[kind])
+        self.issue_severity.set('Todas')
+        self.refresh_issues()
+        self.tabs.select(self.pending_tab)
 
     def open_overview_cell(self, event):
         kind = self.overview_tree.identify_row(event.y)

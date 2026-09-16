@@ -184,6 +184,27 @@ class Analysis:
     def blocking(self):
         return [i for i in self.issues if i.severity != 'Aviso']
 
+    def readiness_by_kind(self):
+        """Local readiness is independent for each output file."""
+        readiness = {}
+        for kind, records in self.records.items():
+            issues = [issue for issue in self.issues if issue.kind == kind]
+            errors = sum(issue.severity == 'Erro' for issue in issues)
+            pending = sum(issue.severity == 'Pendente' for issue in issues)
+            warnings = sum(issue.severity == 'Aviso' for issue in issues)
+            if not records:
+                status, detail = 'Sem registros', 'Não há registros nesta carga para exportar.'
+            elif errors or pending:
+                status = 'Com pendências'
+                detail = f'{errors} erro(s) e {pending} pendência(s) local(is) para revisar.'
+            elif warnings:
+                status, detail = 'Pronta com avisos', f'{warnings} aviso(s) local(is); não impedem a exportação.'
+            else:
+                status, detail = 'Pronta', 'Sem erros ou pendências locais.'
+            readiness[kind] = dict(status=status, detail=detail, errors=errors,
+                                   pending=pending, warnings=warnings, records=len(records))
+        return readiness
+
 class Project:
     def duplicate_users(self, data=None):
         """Compare effective output values, never merge or discard source rows."""
