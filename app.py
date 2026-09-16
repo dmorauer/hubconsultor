@@ -542,7 +542,7 @@ class App(tk.Tk):
             key = str(p['row'])
             items[key] = p
             table.insert('', 'end', iid=key, values=[p[k] for k in ('row', 'name', 'extra', 'casa', 'before', 'after', 'note')])
-        table.selection_set([str(p['row']) for p in preview if p['after'] and p['complete']])
+        table.selection_set([str(p['row']) for p in preview if p['after'] and p['complete'] and not p['duplicate']])
         def update_preview(*_):
             nonlocal preview
             table.delete(*table.get_children())
@@ -554,13 +554,13 @@ class App(tk.Tk):
                 format_status.set(str(exc))
             for p in preview:
                 table.insert('', 'end', iid=str(p['row']), values=[p[k] for k in ('row', 'name', 'extra', 'casa', 'before', 'after', 'note')])
-            table.selection_set([str(p['row']) for p in preview if p['after'] and p['complete']])
+            table.selection_set([str(p['row']) for p in preview if p['after'] and p['complete'] and not p['duplicate']])
         pattern.trace_add('write', update_preview)
         def apply():
             selected = set(table.selection())
             chosen = [p for p in preview if str(p['row']) in selected]
-            if not chosen or any(not p['after'] for p in chosen):
-                messagebox.showinfo('Selecionar propostas', 'Selecione apenas registros com proposta válida.', parent=win)
+            if not chosen or any(not p['after'] or p['duplicate'] for p in chosen):
+                messagebox.showinfo('Selecionar propostas', 'Selecione apenas registros com proposta válida e sem código duplicado.', parent=win)
                 return
             if not messagebox.askyesno('Confirmar concatenação', f'Aplicar as {len(chosen)} propostas selecionadas? Cada registro receberá o código exibido na sua linha.', parent=win):
                 return

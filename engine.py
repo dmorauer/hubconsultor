@@ -13,6 +13,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, date
 from difflib import SequenceMatcher
 from pathlib import Path
+from zipfile import ZIP_DEFLATED, ZipFile
+import xml.etree.ElementTree as ET
 
 import openpyxl
 from openpyxl.styles import Alignment, Font, PatternFill
@@ -65,6 +67,74 @@ def safe_value(cell, value):
     cell.value = None if value == '' else value
     if isinstance(value, str):
         cell.data_type = 's'
+
+
+def shared_strings_compatible(path):
+    """Convert OpenPyXL inline strings to the shared-string format expected by Paytrack."""
+    path = Path(path)
+    main_ns = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
+    rel_ns = 'http://schemas.openxmlformats.org/package/2006/relationships'
+    type_ns = 'http://schemas.openxmlformats.org/package/2006/content-types'
+    q = lambda namespace, name: f'{{{namespace}}}{name}'
+    with ZipFile(path) as archive:
+        files = {entry.filename: archive.read(entry.filename) for entry in archive.infolist()}
+    shared, positions, total = [], {}, 0
+    for name, data in list(files.items()):
+        if not name.startswith('xl/worksheets/') or not name.endswith('.xml'):
+            continue
+        root = ET.fromstring(data)
+        changed = False
+        for cell in root.findall(f'.//{q(main_ns, "c")}'):
+            if cell.get('t') != 'inlineStr':
+                continue
+            inline = cell.find(q(main_ns, 'is'))
+            value = ''.join(inline.itertext()) if inline is not None else ''
+            index = positions.setdefault(value, len(shared))
+            if index == len(shared):
+                shared.append(value)
+            cell.set('t', 's')
+            for child in list(cell):
+                cell.remove(child)
+            ET.SubElement(cell, q(main_ns, 'v')).text = str(index)
+            total += 1
+            changed = True
+        if changed:
+            files[name] = ET.tostring(root, encoding='utf-8', xml_declaration=True)
+    if not total:
+        return
+    table = ET.Element(q(main_ns, 'sst'), {'count': str(total), 'uniqueCount': str(len(shared))})
+    for value in shared:
+        item = ET.SubElement(table, q(main_ns, 'si'))
+        text_node = ET.SubElement(item, q(main_ns, 't'))
+        if value[:1].isspace() or value[-1:].isspace():
+            text_node.set('{http://www.w3.org/XML/1998/namespace}space', 'preserve')
+        text_node.text = value
+    files['xl/sharedStrings.xml'] = ET.tostring(table, encoding='utf-8', xml_declaration=True)
+    content_types = ET.fromstring(files['[Content_Types].xml'])
+    if not any(item.get('PartName') == '/xl/sharedStrings.xml' for item in content_types):
+        ET.SubElement(content_types, q(type_ns, 'Override'), {
+            'PartName': '/xl/sharedStrings.xml',
+            'ContentType': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml',
+        })
+    files['[Content_Types].xml'] = ET.tostring(content_types, encoding='utf-8', xml_declaration=True)
+    relations_name = 'xl/_rels/workbook.xml.rels'
+    relations = ET.fromstring(files[relations_name])
+    if not any(item.get('Type', '').endswith('/sharedStrings') for item in relations):
+        ids = {item.get('Id') for item in relations}
+        number = 1
+        while f'rId{number}' in ids:
+            number += 1
+        ET.SubElement(relations, q(rel_ns, 'Relationship'), {
+            'Id': f'rId{number}',
+            'Type': 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings',
+            'Target': 'sharedStrings.xml',
+        })
+    files[relations_name] = ET.tostring(relations, encoding='utf-8', xml_declaration=True)
+    temporary = path.with_suffix('.shared-strings.tmp')
+    with ZipFile(temporary, 'w', ZIP_DEFLATED) as archive:
+        for name, data in files.items():
+            archive.writestr(name, data)
+    temporary.replace(path)
 
 @dataclass
 class Record:
@@ -385,8 +455,14 @@ class Project:
         remainder = pattern.replace('{EXTRAFRUTI}', '').replace('{CASAFRUTI}', '')
         if '{' in remainder or '}' in remainder or not any(token in pattern for token in ('{EXTRAFRUTI}', '{CASAFRUTI}')):
             raise ValueError('Use {EXTRAFRUTI} e/ou {CASAFRUTI} para representar os códigos de cada pessoa.')
+        records = self.effective()['USERS']
+        selected_rows = set(rows)
         proposals = []
-        for record in self.effective()['USERS']:
+        occupied = defaultdict(list)
+        for record in records:
+            if record.row not in selected_rows and text(record.values[5]):
+                occupied[text(record.values[5]).casefold()].append(record.row)
+        for record in records:
             if record.row not in rows:
                 continue
             source = {norm(k): v for k, v in record.source.items()}
@@ -402,12 +478,22 @@ class Project:
                 note='Pronto para confirmar' if valid and complete else
                      'Proposta parcial: um dos códigos está vazio. Confira ou altere o formato antes de confirmar.' if valid else
                      'Revise na origem: não há código ou há fórmula ou quebra de linha.'))
+        proposed_rows = defaultdict(list)
+        for proposal in proposals:
+            if proposal['after']:
+                proposed_rows[proposal['after'].casefold()].append(proposal['row'])
+        for proposal in proposals:
+            key = proposal['after'].casefold()
+            conflicts = sorted(set(occupied.get(key, []) + proposed_rows.get(key, [])) - {proposal['row']}) if proposal['after'] else []
+            proposal['duplicate'] = bool(conflicts)
+            if conflicts:
+                proposal['note'] = 'Código de integração duplicado nas linhas ' + ', '.join(map(str, conflicts)) + '. Não será aplicado; revise os códigos na origem ou o formato.'
         return proposals
 
     def accept_integration_suggestions(self, preview, pattern='0.{EXTRAFRUTI}.1.{CASAFRUTI}'):
         current = self.integration_suggestions([p['row'] for p in preview], pattern)
-        if not preview or preview != current or any(not p['after'] for p in preview):
-            raise ValueError('A proposta mudou ou há códigos inválidos. Reabra a revisão.')
+        if not preview or preview != current or any(not p['after'] or p['duplicate'] for p in preview):
+            raise ValueError('A proposta mudou, é inválida ou gera código duplicado. Reabra a revisão.')
         for proposal in preview:
             self.set_value('USERS', [proposal['row']], 5, proposal['after'])
             self.history[-1][4] = proposal['before']
@@ -483,6 +569,10 @@ class Project:
             if costs[(text(r.values[1]), text(r.values[4]))] > 1:
                 add('CUST', r.row, 1, 'Identificador repetido na mesma empresa.', 'Erro')
         counts = Counter(text(r.values[3]).casefold() for r in data['USERS'] if r.values[3])
+        integration_counts = Counter(text(r.values[5]).casefold() for r in data['USERS'] if r.values[5])
+        for record in data['USERS']:
+            if record.values[5] and integration_counts[text(record.values[5]).casefold()] > 1:
+                add('USERS', record.row, 5, 'Código de integração repetido. Revise os códigos de origem ou o formato de concatenação; nenhum sufixo foi criado.', 'Erro')
         reserved = {text(r.values[3]).casefold() for r in data['USERS'] if r.values[3]}
         company_refs = {}
         for r in data['EMPLOYER']:
@@ -586,7 +676,7 @@ class Project:
         if 'Integração' in categories:
             rows = [r.row for r in self.effective()['USERS'] if not text(r.values[5])]
             for p in self.integration_suggestions(rows, pattern):
-                if p['after'] and p['complete']:
+                if p['after'] and p['complete'] and not p['duplicate']:
                     add('Integração', 'USERS', p['row'], 5, p['before'], p['after'])
         counts = Counter((p['kind'], p['row'], p['col']) for p in candidates)
         return [p for p in candidates if counts[p['kind'], p['row'], p['col']] == 1]
@@ -658,10 +748,12 @@ class Project:
                             cell._style = copy.copy(sheet.cell(2, col)._style)
                         safe_value(cell, value)
                         cell.number_format = 'dd/mm/yyyy' if isinstance(value, datetime) else '@'
-                wb.save(staging / f'DEFAULT_{kind}.xlsx')
+                output_file = staging / f'DEFAULT_{kind}.xlsx'
+                wb.save(output_file)
                 wb.close()
+                shared_strings_compatible(output_file)
                 # Reopen and verify exact contract and values, including leading zeroes.
-                check = openpyxl.load_workbook(staging / f'DEFAULT_{kind}.xlsx')
+                check = openpyxl.load_workbook(output_file)
                 assert check.sheetnames == [self.template_sheets[kind]]
                 assert [check.active.cell(1, c + 1).value for c in range(WIDTHS[kind])] == self.headers[kind]
                 for output_row, record in enumerate(analysis.records[kind], 2):
