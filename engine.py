@@ -562,6 +562,78 @@ class Project:
                         add(kind, row, 5, 'Há código(s) de integração Casafruti e/ou Extrafruti. Revise a concatenação sugerida.')
                     if any(src.get(norm(k)) for k in ['CPF Usuário aprovador', 'Nome Usuário aprovador']) and not v[12]:
                         add(kind, row, 12, 'A origem identifica o aprovador por CPF/nome; o destino pede usuário. Deseja informar agora?')
+
+        # References between tabs are deliberately pending reviews: a company or
+        # cost center absent from this file can already exist in Paytrack.
+        def reference_keys(value):
+            raw = text(value)
+            if not raw:
+                return set()
+            digits = document(raw)
+            return {raw.casefold(), digits} if digits else {raw.casefold()}
+
+        company_by_reference = defaultdict(list)
+        for company in data['EMPLOYER']:
+            for value in (company.values[1], company.values[6]):
+                for key in reference_keys(value):
+                    company_by_reference[key].append(company)
+
+        def companies_for(value):
+            matches = []
+            for key in reference_keys(value):
+                matches.extend(company_by_reference.get(key, []))
+            return list({record.row: record for record in matches}.values())
+
+        costs_by_code = defaultdict(list)
+        costs_by_description = defaultdict(list)
+        for cost in data['CUST']:
+            if text(cost.values[1]):
+                costs_by_code[text(cost.values[1]).casefold()].append(cost)
+            if text(cost.values[2]):
+                costs_by_description[norm(cost.values[2])].append(cost)
+
+        for user in data['USERS']:
+            values = user.values
+            company_value = values[9]
+            company_matches = companies_for(company_value)
+            if text(company_value):
+                if not company_matches:
+                    add('USERS', user.row, 9,
+                        'Empresa não localizada nesta carga. Ela pode já existir no Paytrack; confirme o CNPJ ou código de integração.',
+                        'Pendente')
+                elif len(company_matches) > 1:
+                    add('USERS', user.row, 9,
+                        'Empresa ambígua nesta carga. Há mais de uma unidade com essa referência; confirme o CNPJ ou código de integração.',
+                        'Pendente')
+
+            code, description = text(values[10]), text(values[11])
+            if not code and not description:
+                continue
+            candidates = []
+            if code:
+                candidates.extend(costs_by_code.get(code.casefold(), []))
+            if description:
+                candidates.extend(costs_by_description.get(norm(description), []))
+            candidates = list({record.row: record for record in candidates}.values())
+            if not candidates:
+                add('USERS', user.row, 10 if code else 11,
+                    'Centro de custo não localizado nesta carga. Ele pode já existir no Paytrack; confirme o código ou descrição.',
+                    'Pendente')
+                continue
+            if len(company_matches) == 1:
+                expected_company = company_matches[0]
+                compatible = [cost for cost in candidates
+                              if expected_company in companies_for(cost.values[4])]
+                if not compatible:
+                    add('USERS', user.row, 10 if code else 11,
+                        'Centro de custo localizado, mas vinculado a outra empresa nesta carga. Pode já existir no Paytrack; confirme o vínculo.',
+                        'Pendente')
+                elif code and description and not any(
+                        text(cost.values[1]).casefold() == code.casefold() and norm(cost.values[2]) == norm(description)
+                        for cost in compatible):
+                    add('USERS', user.row, 10,
+                        'Código e descrição do centro de custo não correspondem ao mesmo cadastro nesta carga. Confirme antes de importar.',
+                        'Pendente')
         # Duplicate identity is a review, not an automatic merge or deletion.
         for group in self.duplicate_users(data):
             rows = ', '.join(str(r.row) for r in group['records'])
