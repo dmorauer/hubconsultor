@@ -108,6 +108,10 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(a.records['USERS'][0].values[6], 'S')
         self.assertIsInstance(a.records['USERS'][0].values[4], datetime)
 
+    def test_mojibake_encoding_fix(self):
+        self.p.set_value('CUST', [2], 2, 'DireÃ§Ã£o Executiva (CEO)')
+        self.assertEqual(self.p.effective()['CUST'][0].values[2], 'Direção Executiva (CEO)')
+
     def test_no_automatic_company_or_ambiguous_code(self):
         a = self.p.analyze()
         self.assertEqual(a.records['USERS'][0].values[5], '')

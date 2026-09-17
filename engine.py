@@ -43,12 +43,25 @@ def mapped_value(mapping, label):
                   if SequenceMatcher(None, target, key).ratio() >= .82]
     return candidates[0] if len(candidates) == 1 else None
 
+def fix_encoding(val):
+    if not isinstance(val, str) or not val:
+        return val
+    if any(c in val for c in ('Ã', 'Â', 'É', 'Ç', 'Õ', 'Á', 'Ê', 'À', 'Í', 'Ú', 'â', 'ê', 'î', 'ô', 'û')):
+        try:
+            raw_bytes = val.encode('latin1')
+            decoded = raw_bytes.decode('utf-8')
+            if '\ufffd' not in decoded and decoded != val:
+                return decoded
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            pass
+    return val
+
 def text(value):
     if value is None:
         return ''
     if isinstance(value, float) and value.is_integer():
         return str(int(value))
-    return str(value).strip()
+    return fix_encoding(str(value).strip())
 
 def document(value):
     return re.sub(r'[.\-/\s]', '', text(value))
