@@ -11,6 +11,12 @@ const definitions: Record<Kind, { sheet: string; required: string[]; width: numb
   USERS: { sheet: "Colaboradores", required: ["Nome completo", "CPF", "E-mail", "Ativo (S ou N)"], width: 23 },
 };
 export const labels: Record<Kind, string> = { EMPLOYER: "Unidades de negócio", CUST: "Centros de custo", EXPENSES: "Tipos de despesa", USERS: "Usuários" };
+export const outputHeaders: Record<Kind, string[]> = {
+  EMPLOYER: ["Nome", "CNPJ", "Contato", "Telefone", "E-mail", "Moeda", "Código de integração", "Contato suporte", "E-mail suporte", "Telefone suporte", "Celular suporte", "WhatsApp suporte", "Unidade faturamento", "CEP", "Logradouro", "Número", "Bairro", "Cidade", "Estado", "País"],
+  CUST: ["Identificador pai", "Identificador", "Descrição", "Ativo", "Empresa"],
+  EXPENSES: ["Código", "Descrição PT-BR", "Descrição EN", "Descrição ES", "Quantificação", "Item orçamento", "Cotável", "Data final", "Ativo", "Trajeto", "Integração", "Nota", "Imagem", "Região", "Anexo", "Justificativa"],
+  USERS: ["Nome completo", "Sexo", "CPF", "E-mail", "Nascimento", "Código integração", "Ativo", "Usuário", "Senha", "Empresa", "Centro custo", "Descrição centro", "Aprovador gestor", "Aprovador valores"],
+};
 
 const norm = (value: unknown) => String(value ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
 const text = (value: unknown) => String(value ?? "").trim();
