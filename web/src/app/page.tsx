@@ -41,11 +41,13 @@ export default function Home() {
   }), [users]);
   const issues = useMemo<Issue[]>(() => {
     const repeated = new Set(users.filter((user) => user.email).map((user) => user.email.toLowerCase()).filter((email, _, all) => all.filter((current) => current === email).length > 1));
+    const repeatedCpf = new Set(users.map((user) => digits(user.cpf)).filter((cpf, _, all) => cpf && all.filter((current) => current === cpf).length > 1));
     return users.flatMap((user) => {
       const list: Issue[] = []; const cpf = digits(user.cpf);
       if (!user.name) list.push({ row: user.row, field: "Nome", reason: "Campo obrigatório vazio.", severity: "Pendente" });
       if (!cpf) list.push({ row: user.row, field: "CPF", reason: "Campo obrigatório vazio.", severity: "Pendente" });
       else if (cpf.length > 11) list.push({ row: user.row, field: "CPF", reason: "CPF possui mais de 11 dígitos; ele não será cortado.", severity: "Erro" });
+      else if (repeatedCpf.has(cpf)) list.push({ row: user.row, field: "CPF", reason: "CPF repetido em mais de uma linha. Revise os registros antes de exportar.", severity: "Erro" });
       if (!user.email) list.push({ row: user.row, field: "E-mail", reason: "Campo obrigatório vazio.", severity: "Pendente" });
       else if (!validEmail(user.email)) list.push({ row: user.row, field: "E-mail", reason: "Formato de e-mail inválido.", severity: "Erro" });
       else if (repeated.has(user.email.toLowerCase())) list.push({ row: user.row, field: "E-mail", reason: "E-mail repetido. A sugestão precisa ser confirmada antes de alterar.", severity: "Erro" });
