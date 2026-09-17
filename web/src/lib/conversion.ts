@@ -1,4 +1,5 @@
 import * as XLSX from "xlsx";
+import JSZip from "jszip";
 
 export type Kind = "EMPLOYER" | "CUST" | "EXPENSES" | "USERS";
 export type RecordRow = { sourceRow: number; values: string[]; source: Record<string, string> };
@@ -53,10 +54,13 @@ export function parseWorkbook(buffer: ArrayBuffer): Conversion {
 }
 
 export async function exportDefaults(conversion: Conversion) {
+  const zip = new JSZip();
   for (const kind of Object.keys(definitions) as Kind[]) {
     const response = await fetch(`/DEFAULT_${kind}.xlsx`); if (!response.ok) throw new Error(`Modelo DEFAULT_${kind}.xlsx não encontrado.`);
     const workbook = XLSX.read(await response.arrayBuffer(), { type: "array" }); const worksheet = workbook.Sheets[workbook.SheetNames[0]];
     conversion[kind].forEach((record, index) => record.values.forEach((cell, column) => { if (cell) XLSX.utils.sheet_add_aoa(worksheet, [[cell]], { origin: { r: index + 1, c: column } }); }));
-    XLSX.writeFile(workbook, `DEFAULT_${kind}.xlsx`, { bookType: "xlsx", compression: true });
+    zip.file(`DEFAULT_${kind}.xlsx`, XLSX.write(workbook, { bookType: "xlsx", type: "array", compression: true }));
   }
+  const url = URL.createObjectURL(await zip.generateAsync({ type: "blob", compression: "DEFLATE" }));
+  const anchor = document.createElement("a"); anchor.href = url; anchor.download = "CARGAS_PAYTRACK.zip"; anchor.click(); URL.revokeObjectURL(url);
 }
