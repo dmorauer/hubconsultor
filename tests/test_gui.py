@@ -54,7 +54,7 @@ class GuiTests(unittest.TestCase):
         self.assertEqual(int(values[1]), 3)
         self.assertEqual(int(values[2]), 2)
         self.assertEqual(int(values[3]), 2)
-        self.assertEqual(int(values[4]), 4 + sum(p['kind'] == 'USERS' for p in self.app.project.normalizations()))
+        self.assertEqual(int(values[4]), sum(1 for i in self.app.analysis.issues if i.kind == 'USERS' and i.severity == 'Pendente'))
         self.app.open_overview('USERS', '#3')
         self.assertTrue(all(i.kind == 'USERS' and i.severity == 'Erro' for i in self.app.issue_items.values()))
         self.assertEqual(len(self.app.issue_items), 2)

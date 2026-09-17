@@ -21,7 +21,10 @@ def resource_dir():
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.iconbitmap(default=str(resource_dir() / 'assets' / 'paytrack.ico'))
+        try:
+            self.iconbitmap(default=str(resource_dir() / 'assets' / 'paytrack.ico'))
+        except Exception:
+            pass
         self.title('Validador de Cargas | Paytrack')
         self.geometry('1260x820')
         self.minsize(1000, 650)
