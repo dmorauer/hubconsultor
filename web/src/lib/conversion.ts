@@ -4,7 +4,8 @@ import JSZip from "jszip";
 export type Kind = "EMPLOYER" | "CUST" | "EXPENSES" | "USERS";
 export type RecordRow = { sourceRow: number; values: string[]; source: Record<string, string> };
 export type Conversion = Record<Kind, RecordRow[]>;
-export type HierarchyNode = { sourceRow: number; root: string; parent: string; parentDescription: string; id: string; description: string; active: string; company: string; allowanceId: string };
+export type HierarchyNode = { sourceRow: number; root: string; parent: string; parentDescription: string; id: string; description: string; active: string; company: string; allowanceId: string; travelerCpf: string; approverCpf: string };
+export type HierarchyMode = "HIERARQUIA" | "HIERARQUIA_COLABORADORES" | "HIERARQUIA_APROVADORES";
 export type HierarchyIssue = { sourceRow: number; field: string; reason: string; severity: "Erro" | "Pendente" };
 
 const definitions: Record<Kind, { sheet: string; required: string[]; width: number }> = {
@@ -40,7 +41,7 @@ export function parseHierarchyWorkbook(buffer: ArrayBuffer): HierarchyNode[] {
   required.forEach((header) => { if (!headers.some((cell) => norm(cell) === norm(header))) throw new Error(`Hierarquia: coluna obrigatória ausente: ${header}.`); });
   return data.flatMap((row, index) => {
     if (!row.some((cell) => text(cell))) return [];
-    return [{ sourceRow: index + 2, root: value(headers, row, "identificador_raiz"), parent: value(headers, row, "identificador_pai"), parentDescription: value(headers, row, "descricao_pai"), id: value(headers, row, "identificador"), description: value(headers, row, "descricao"), active: yesNo(value(headers, row, "ativo")), company: value(headers, row, "empresa"), allowanceId: value(headers, row, "identificador_alcada") }];
+    return [{ sourceRow: index + 2, root: value(headers, row, "identificador_raiz"), parent: value(headers, row, "identificador_pai"), parentDescription: value(headers, row, "descricao_pai"), id: value(headers, row, "identificador"), description: value(headers, row, "descricao"), active: yesNo(value(headers, row, "ativo")), company: value(headers, row, "empresa"), allowanceId: value(headers, row, "identificador_alcada"), travelerCpf: compactDocument(value(headers, row, "cpf_colaborador"), 11), approverCpf: digits(value(headers, row, "cpf_aprovador")) }];
   });
 }
 
@@ -98,12 +99,12 @@ export async function exportDefaults(conversion: Conversion) {
 const csvCell = (value: unknown) => `"${String(value ?? "").replace(/"/g, '""')}"`;
 const sourceValue = (source: Record<string, string>, label: string) => Object.entries(source).find(([header]) => norm(header) === norm(label))?.[1] ?? "";
 
-export async function exportSynchronizer(conversion: Conversion, hierarchy: HierarchyNode[]) {
+export async function exportSynchronizer(conversion: Conversion, hierarchy: HierarchyNode[], hierarchyMode: HierarchyMode) {
   const zip = new JSZip();
   const headers = ["nome", "sexo", "cpf", "email", "data_nascimento", "codigo_integracao", "ativo", "usuario", "senha", "empresa", "cargo", "nome_mae", "telefone", "rg", "cnh", "data_validade_cnh", "centro_custo_codigo_pai", "centro_custo_codigo", "centro_custo_descricao", "banco", "agencia", "conta"];
   const users = conversion.USERS.map((record) => [record.values[0], record.values[1], record.values[2], record.values[3], record.values[4], record.values[5], record.values[6], record.values[7], record.values[8], record.values[9], sourceValue(record.source, "Cargo"), sourceValue(record.source, "Nome da mãe"), sourceValue(record.source, "Telefone"), sourceValue(record.source, "RG"), sourceValue(record.source, "CNH"), sourceValue(record.source, "Data de validade da CNH"), sourceValue(record.source, "Centro de custo (Cód. pai no ERP)"), record.values[10], record.values[11], sourceValue(record.source, "Banco"), sourceValue(record.source, "Agência"), sourceValue(record.source, "Conta")]);
   zip.file("COLABORADORES.csv", [headers, ...users].map((row) => row.map(csvCell).join(",")).join("\r\n"));
-  if (hierarchy.length) { const hierarchyHeaders = ["identificador_raiz", "identificador_pai", "descricao_pai", "identificador", "descricao", "ativo", "empresa", "identificador_alcada"]; zip.file("HIERARQUIA.csv", [hierarchyHeaders, ...hierarchy.map((node) => [node.root, node.parent, node.parentDescription, node.id, node.description, node.active, node.company, node.allowanceId])].map((row) => row.map(csvCell).join(",")).join("\r\n")); }
+  if (hierarchy.length) { const hierarchyHeaders = ["identificador_raiz", "identificador_pai", "descricao_pai", "identificador", "descricao", "ativo", "empresa", "identificador_alcada"]; const additionalHeader = hierarchyMode === "HIERARQUIA_COLABORADORES" ? "cpf_colaborador" : hierarchyMode === "HIERARQUIA_APROVADORES" ? "cpf_aprovador" : ""; const rows = hierarchy.map((node) => { const base = [node.root, node.parent, node.parentDescription, node.id, node.description, node.active, node.company, node.allowanceId]; return additionalHeader ? [...base, hierarchyMode === "HIERARQUIA_COLABORADORES" ? node.travelerCpf : node.approverCpf] : base; }); zip.file(`${hierarchyMode}.csv`, [[...hierarchyHeaders, ...(additionalHeader ? [additionalHeader] : [])], ...rows].map((row) => row.map(csvCell).join(",")).join("\r\n")); }
   zip.file("LEIA-ME.txt", `Arquivos preparados para o Sincronizador Paytrack.\r\n\r\nEnvie cada CSV diretamente para /sincronizador/<seu_email>/ no Google Drive.\r\nMantenha os nomes exatos: COLABORADORES.csv e HIERARQUIA.csv.\r\nSelecione no Paystore o tipo correspondente a cada arquivo.\r\n`);
   const url = URL.createObjectURL(await zip.generateAsync({ type: "blob", compression: "DEFLATE" })); const anchor = document.createElement("a"); anchor.href = url; anchor.download = "CARGAS_SINCRONIZADOR_PAYTRACK.zip"; anchor.click(); URL.revokeObjectURL(url);
 }
