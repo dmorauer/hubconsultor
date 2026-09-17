@@ -118,7 +118,7 @@ export function parseWorkbook(buffer: ArrayBuffer): Conversion {
   return result;
 }
 
-export async function exportDefaults(conversion: Conversion) {
+export async function exportDefaults(conversion: Conversion, reviewReport?: string) {
   const zip = new JSZip();
   for (const kind of Object.keys(definitions) as Kind[]) {
     const response = await fetch(`/DEFAULT_${kind}.xlsx`); if (!response.ok) throw new Error(`Modelo DEFAULT_${kind}.xlsx não encontrado.`);
@@ -126,6 +126,7 @@ export async function exportDefaults(conversion: Conversion) {
     conversion[kind].forEach((record, index) => record.values.forEach((cell, column) => { if (cell) XLSX.utils.sheet_add_aoa(worksheet, [[cell]], { origin: { r: index + 1, c: column } }); }));
     zip.file(`DEFAULT_${kind}.xlsx`, XLSX.write(workbook, { bookType: "xlsx", type: "array", compression: true }));
   }
+  if (reviewReport) zip.file("RELATORIO_REVISAO.txt", reviewReport);
   const url = URL.createObjectURL(await zip.generateAsync({ type: "blob", compression: "DEFLATE" }));
   const anchor = document.createElement("a"); anchor.href = url; anchor.download = "CARGAS_PAYTRACK.zip"; anchor.click(); URL.revokeObjectURL(url);
 }
@@ -144,7 +145,7 @@ export function exportHierarchyCsv(hierarchy: HierarchyNode[], hierarchyMode: Hi
   const url = URL.createObjectURL(new Blob([hierarchyCsv(hierarchy, hierarchyMode)], { type: "text/csv;charset=utf-8" })); const anchor = document.createElement("a"); anchor.href = url; anchor.download = `${hierarchyMode}.csv`; anchor.click(); URL.revokeObjectURL(url);
 }
 
-export async function exportSynchronizer(conversion: Conversion, hierarchy: HierarchyNode[], hierarchyMode: HierarchyMode) {
+export async function exportSynchronizer(conversion: Conversion, hierarchy: HierarchyNode[], hierarchyMode: HierarchyMode, reviewReport?: string) {
   const zip = new JSZip();
   const headers = ["nome", "sexo", "cpf", "email", "data_nascimento", "codigo_integracao", "ativo", "usuario", "senha", "empresa", "cargo", "nome_mae", "telefone", "rg", "cnh", "data_validade_cnh", "centro_custo_codigo_pai", "centro_custo_codigo", "centro_custo_descricao", "banco", "agencia", "conta"];
   const users = conversion.USERS.map((record) => [record.values[0], record.values[1], record.values[2], record.values[3], record.values[4], record.values[5], record.values[6], record.values[7], record.values[8], record.values[9], sourceValue(record.source, "Cargo"), sourceValue(record.source, "Nome da mãe"), sourceValue(record.source, "Telefone"), sourceValue(record.source, "RG"), sourceValue(record.source, "CNH"), sourceValue(record.source, "Data de validade da CNH"), sourceValue(record.source, "Centro de custo (Cód. pai no ERP)"), record.values[10], record.values[11], sourceValue(record.source, "Banco"), sourceValue(record.source, "Agência"), sourceValue(record.source, "Conta")]);
@@ -177,6 +178,7 @@ export async function exportSynchronizer(conversion: Conversion, hierarchy: Hier
   ].join("\r\n");
 
   zip.file("RESUMO_REVISAO.txt", summaryContent);
+  if (reviewReport) zip.file("RELATORIO_REVISAO.txt", reviewReport);
   zip.file("LEIA-ME.txt", `Arquivos preparados para o Sincronizador Paytrack.\r\n\r\nEnvie cada CSV diretamente para /sincronizador/<seu_email>/ no Google Drive.\r\nMantenha os nomes exatos: COLABORADORES.csv e HIERARQUIA.csv.\r\nSelecione no Paystore o tipo correspondente a cada arquivo.\r\nConsulte RESUMO_REVISAO.txt para o resumo das pendências e registros exportados.\r\n`);
   const url = URL.createObjectURL(await zip.generateAsync({ type: "blob", compression: "DEFLATE" })); const anchor = document.createElement("a"); anchor.href = url; anchor.download = "CARGAS_SINCRONIZADOR_PAYTRACK.zip"; anchor.click(); URL.revokeObjectURL(url);
 }
