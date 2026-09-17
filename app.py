@@ -158,7 +158,7 @@ class App(tk.Tk):
         bar = ttk.Frame(self.normalizations_tab)
         bar.pack(fill='x', pady=8)
         self.normalization_category = tk.StringVar(value='Espaços')
-        categories = ttk.Combobox(bar, textvariable=self.normalization_category, values=['Espaços', 'Documentos', 'Datas', 'Sim/Não', 'Sexo'], state='readonly')
+        categories = ttk.Combobox(bar, textvariable=self.normalization_category, values=['Espaços', 'Documentos', 'Datas', 'Sim/Não', 'Sexo', 'CEP', 'Telefones'], state='readonly')
         categories.pack(side='left')
         categories.bind('<<ComboboxSelected>>', lambda e: self.refresh_normalizations())
         ttk.Button(bar, text='Aplicar categoria exibida', command=lambda: self.apply_normalizations(all_rows=True)).pack(side='right')
@@ -648,7 +648,7 @@ class App(tk.Tk):
         ttk.Label(frame, text='Escolha as categorias e confirme uma vez. Cada célula recebe sua própria proposta.\nCasos ambíguos, documentos longos e conflitos permanecem pendentes.', wraplength=1100).pack(anchor='w')
         bar = ttk.Frame(frame)
         bar.pack(fill='x', pady=10)
-        categories = {name: tk.BooleanVar(value=True) for name in ['Espaços', 'Documentos', 'Datas', 'Sim/Não', 'Sexo', 'E-mails', 'Preenchimento', 'Integração']}
+        categories = {name: tk.BooleanVar(value=True) for name in ['Espaços', 'Documentos', 'Datas', 'Sim/Não', 'Sexo', 'CEP', 'Telefones', 'E-mails', 'Preenchimento', 'Integração']}
         pattern = tk.StringVar(value='0.{EXTRAFRUTI}.1.{CASAFRUTI}')
         approved = tk.BooleanVar(value=False)
         summary = tk.StringVar()

@@ -66,6 +66,26 @@ def text(value):
 def document(value):
     return re.sub(r'[.\-/\s]', '', text(value))
 
+def is_valid_cnpj(cnpj):
+    cnpj = document(cnpj)
+    if not re.fullmatch(r'\d{14}', cnpj):
+        return False
+    if cnpj == cnpj[0] * 14:
+        return False
+    w1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
+    s1 = sum(int(cnpj[i]) * w1[i] for i in range(12))
+    r1 = s1 % 11
+    d1 = 0 if r1 < 2 else 11 - r1
+    if int(cnpj[12]) != d1:
+        return False
+    w2 = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
+    s2 = sum(int(cnpj[i]) * w2[i] for i in range(13))
+    r2 = s2 % 11
+    d2 = 0 if r2 < 2 else 11 - r2
+    if int(cnpj[13]) != d2:
+        return False
+    return True
+
 def is_valid_cpf(cpf):
     cpf = document(cpf)
     if not re.fullmatch(r'\d{11}', cpf):
@@ -383,7 +403,11 @@ class Project:
                 return 'F'
             return text(value).strip()
         if kind == 'EMPLOYER' and col == 13:
-            return document(value)
+            d = document(value)
+            return d.zfill(8) if re.fullmatch(r'\d{1,8}', d) else value
+        if kind == 'EMPLOYER' and col in (3, 7, 8, 9, 10, 11):
+            d = re.sub(r'\D', '', text(value))
+            return d if re.fullmatch(r'\d{8,11}', d) else value
         if col in ENUMS[kind]:
             return {'SIM': 'S', 'NÃO': 'N', 'NAO': 'N'}.get(value.upper(), value.upper())
         if kind == 'EMPLOYER' and col == 19:
@@ -418,7 +442,13 @@ class Project:
                     elif kind == 'USERS' and col == 1:
                         if text(before) != after and after in ('M', 'F'):
                             category = 'Sexo'
-                    elif (kind == 'USERS' and col in (2, 9)) or (kind == 'EMPLOYER' and col in (1, 13)) or (kind == 'CUST' and col == 4):
+                    elif kind == 'EMPLOYER' and col == 13:
+                        if str(before) != after and after:
+                            category = 'CEP'
+                    elif kind == 'EMPLOYER' and col in (3, 7, 8, 9, 10, 11):
+                        if str(before) != after and after:
+                            category = 'Telefones'
+                    elif (kind == 'USERS' and col in (2, 9)) or (kind == 'EMPLOYER' and col == 1) or (kind == 'CUST' and col == 4):
                         if str(before) != after and after:
                             category = 'Documentos'
                     elif ENUMS[kind].get(col) == ('S', 'N'):
@@ -654,8 +684,11 @@ class Project:
                     if v[c] and v[c] not in options:
                         add(kind, row, c, 'Valor aceito: ' + ', '.join(options), 'Erro')
                 if kind == 'EMPLOYER':
-                    if v[1] and not re.fullmatch(r'[0-9]{14}', str(v[1])):
-                        add(kind, row, 1, 'CNPJ deve conter exatamente 14 dígitos; valores maiores não são cortados.', 'Erro')
+                    if v[1]:
+                        if not re.fullmatch(r'[0-9]{14}', str(v[1])):
+                            add(kind, row, 1, 'CNPJ deve conter exatamente 14 dígitos; valores maiores não são cortados.', 'Erro')
+                        elif not is_valid_cnpj(v[1]):
+                            add(kind, row, 1, 'CNPJ inválido (dígitos verificadores incorretos). Confirme o documento.', 'Erro')
                     for c in (4, 8):
                         if v[c] and not email_valid(v[c]):
                             add(kind, row, c, 'Formato de e-mail inválido.', 'Erro')
