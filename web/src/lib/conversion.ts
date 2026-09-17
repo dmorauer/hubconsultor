@@ -55,7 +55,7 @@ export function getHierarchyIssues(nodes: HierarchyNode[]): HierarchyIssue[] {
     if (!node.description) issues.push({ sourceRow: node.sourceRow, field: "descricao", reason: "Descrição obrigatória vazia.", severity: "Erro" });
     if (node.id && norm(node.id) === norm(node.root)) issues.push({ sourceRow: node.sourceRow, field: "identificador", reason: "O identificador não pode ser igual ao identificador_raiz.", severity: "Erro" });
     if (repeated.has(`${norm(node.root)}:${norm(node.id)}`)) issues.push({ sourceRow: node.sourceRow, field: "identificador", reason: "Identificador repetido dentro da mesma raiz; o Sincronizador consolida essas linhas.", severity: "Pendente" });
-    if (node.parent && !known.has(`${norm(node.root)}:${norm(node.parent)}`)) issues.push({ sourceRow: node.sourceRow, field: "identificador_pai", reason: "Pai não está neste arquivo. Confirme que ele já existe na raiz no Paytrack.", severity: "Pendente" });
+    if (node.parent && !known.has(`${norm(node.root)}:${norm(node.parent)}`)) issues.push({ sourceRow: node.sourceRow, field: "identificador_pai", reason: `Pai ${node.parent} não está neste arquivo. Confirme que ele já existe na raiz no Paytrack.`, severity: "Pendente" });
     return issues;
   });
 }
