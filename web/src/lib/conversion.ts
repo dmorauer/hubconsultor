@@ -22,8 +22,27 @@ export const outputHeaders: Record<Kind, string[]> = {
   USERS: ["Nome completo", "Sexo", "CPF", "E-mail", "Nascimento", "Código integração", "Ativo", "Usuário", "Senha", "Empresa", "Centro custo", "Descrição centro", "Aprovador gestor", "Aprovador valores"],
 };
 
+export function fixEncoding(str: string): string {
+  if (typeof str !== "string" || !str) return str;
+  if (/[\u00C0-\u00FF]/.test(str)) {
+    try {
+      const bytes = new Uint8Array(str.length);
+      for (let i = 0; i < str.length; i++) {
+        const code = str.charCodeAt(i);
+        if (code > 255) return str;
+        bytes[i] = code;
+      }
+      const decoded = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+      if (decoded !== str) return decoded;
+    } catch {
+      // Ignore decoding errors
+    }
+  }
+  return str;
+}
+
 const norm = (value: unknown) => String(value ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
-const text = (value: unknown) => String(value ?? "").trim();
+const text = (value: unknown) => fixEncoding(String(value ?? "").trim());
 const digits = (value: unknown) => text(value).replace(/\D/g, "");
 const yesNo = (value: unknown) => { const v = text(value).toUpperCase(); if (!v) return "S"; return v.startsWith("S") ? "S" : v.startsWith("N") ? "N" : v; };
 const compactDocument = (value: unknown, length: number) => { const valueDigits = digits(value); return valueDigits ? valueDigits.padStart(length, "0") : ""; };
