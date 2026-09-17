@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Validador de Cargas | Paytrack",
-  description: "Validador de planilhas de carga Paytrack.",
+  title: "Hub do Consultor | Paytrack",
+  description: "Portal do consultor Paytrack para revisar e preparar cargas.",
   icons: {
     icon: "/icon.png",
   },
