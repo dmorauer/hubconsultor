@@ -34,7 +34,7 @@ function value(headers: unknown[], row: unknown[], label: string) {
 }
 
 export function parseHierarchyWorkbook(buffer: ArrayBuffer): HierarchyNode[] {
-  const workbook = XLSX.read(buffer, { type: "array" }); const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  const workbook = XLSX.read(buffer, { type: "array", raw: false }); const sheet = workbook.Sheets[workbook.SheetNames[0]];
   if (!sheet) throw new Error("A planilha de hierarquia não possui uma aba utilizável.");
   const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: "" }); const [headers = [], ...data] = rows;
   const required = ["identificador_raiz", "identificador_pai", "identificador", "descricao", "ativo", "empresa"];
@@ -115,6 +115,33 @@ export async function exportSynchronizer(conversion: Conversion, hierarchy: Hier
   const users = conversion.USERS.map((record) => [record.values[0], record.values[1], record.values[2], record.values[3], record.values[4], record.values[5], record.values[6], record.values[7], record.values[8], record.values[9], sourceValue(record.source, "Cargo"), sourceValue(record.source, "Nome da mãe"), sourceValue(record.source, "Telefone"), sourceValue(record.source, "RG"), sourceValue(record.source, "CNH"), sourceValue(record.source, "Data de validade da CNH"), sourceValue(record.source, "Centro de custo (Cód. pai no ERP)"), record.values[10], record.values[11], sourceValue(record.source, "Banco"), sourceValue(record.source, "Agência"), sourceValue(record.source, "Conta")]);
   zip.file("COLABORADORES.csv", [headers, ...users].map((row) => row.map(csvCell).join(",")).join("\r\n"));
   if (hierarchy.length) zip.file(`${hierarchyMode}.csv`, hierarchyCsv(hierarchy, hierarchyMode));
-  zip.file("LEIA-ME.txt", `Arquivos preparados para o Sincronizador Paytrack.\r\n\r\nEnvie cada CSV diretamente para /sincronizador/<seu_email>/ no Google Drive.\r\nMantenha os nomes exatos: COLABORADORES.csv e HIERARQUIA.csv.\r\nSelecione no Paystore o tipo correspondente a cada arquivo.\r\n`);
+
+  const hierarchyIssues = getHierarchyIssues(hierarchy);
+  const hierarchyErrorCount = hierarchyIssues.filter((i) => i.severity === "Erro").length;
+  const hierarchyPendingCount = hierarchyIssues.filter((i) => i.severity === "Pendente").length;
+
+  const summaryContent = [
+    "RESUMO DO RELATÓRIO DE REVISÃO E DECISÕES APLICADAS",
+    "---------------------------------------------------",
+    `Data da exportação: ${new Date().toLocaleString("pt-BR")}`,
+    "",
+    "1. REGISTROS EXPORTADOS",
+    `   - Colaboradores: ${conversion.USERS.length} registro(s)`,
+    `   - Unidades de Negócio (Empresas): ${conversion.EMPLOYER.length} registro(s)`,
+    `   - Centros de Custo: ${conversion.CUST.length} registro(s)`,
+    `   - Tipos de Despesa: ${conversion.EXPENSES.length} registro(s)`,
+    `   - Hierarquia (${hierarchyMode}): ${hierarchy.length} nó(s)`,
+    "",
+    "2. RESUMO DE PENDÊNCIAS E REVISÕES",
+    `   - Pendências de Hierarquia: ${hierarchyIssues.length} (${hierarchyErrorCount} erro(s), ${hierarchyPendingCount} aviso(s)/pendência(s))`,
+    "",
+    "3. DECISÕES E REGISTROS EXPORTADOS",
+    "   - Os arquivos CSV foram gerados e sanitizados para importação/sincronização no Paytrack.",
+    "   - Para hierarquias, confirme a estrutura da árvore visualmente ou pelo arquivo exportado.",
+    ""
+  ].join("\r\n");
+
+  zip.file("RESUMO_REVISAO.txt", summaryContent);
+  zip.file("LEIA-ME.txt", `Arquivos preparados para o Sincronizador Paytrack.\r\n\r\nEnvie cada CSV diretamente para /sincronizador/<seu_email>/ no Google Drive.\r\nMantenha os nomes exatos: COLABORADORES.csv e HIERARQUIA.csv.\r\nSelecione no Paystore o tipo correspondente a cada arquivo.\r\nConsulte RESUMO_REVISAO.txt para o resumo das pendências e registros exportados.\r\n`);
   const url = URL.createObjectURL(await zip.generateAsync({ type: "blob", compression: "DEFLATE" })); const anchor = document.createElement("a"); anchor.href = url; anchor.download = "CARGAS_SINCRONIZADOR_PAYTRACK.zip"; anchor.click(); URL.revokeObjectURL(url);
 }
