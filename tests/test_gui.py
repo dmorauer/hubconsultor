@@ -108,8 +108,8 @@ class GuiTests(unittest.TestCase):
 
     def test_explicit_email_acceptance_refreshes_ui(self):
         self.app.load_project(ask=False)
-        self.app.project.set_value('USERS', [2], 9, '01234567000189')
-        self.app.project.confirm_domain('01234567000189', 'example.com')
+        self.app.project.set_value('USERS', [2], 9, '01234567000195')
+        self.app.project.confirm_domain('01234567000195', 'example.com')
         self.app.refresh()
         proposed = self.app.email_items['2'].proposed
         self.app.emails_tree.selection_set('2')
@@ -143,8 +143,8 @@ class GuiTests(unittest.TestCase):
                 yield child
                 yield from descendants(child)
         self.app.load_project(ask=False)
-        self.app.project.set_value('USERS', [2, 3], 9, '01234567000189')
-        self.app.project.confirm_domain('01234567000189', 'example.com')
+        self.app.project.set_value('USERS', [2, 3], 9, '01234567000195')
+        self.app.project.confirm_domain('01234567000195', 'example.com')
         self.app.refresh()
         before = dict(self.app.project.decisions)
         self.app.review_all_emails()

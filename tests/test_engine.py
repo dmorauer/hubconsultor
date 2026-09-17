@@ -20,7 +20,7 @@ def source_file(path):
     data = {
         'Empresas': [
             ['Nome*', 'CNPJ*', 'Nome para contato*', 'Telefone*', 'E-mail*', 'Moeda (BRL, EUR, USD)*', 'Código de integração', 'CEP*', 'Logradouro*', 'Número*', 'Bairro*', 'Cidade*', 'Estado*', 'País*'],
-            ['Empresa Teste', '01.234.567/0001-89', 'Contato', '11 999999999', 'contato@example.com', 'BRL', 'UN1', '01.234-567', 'Rua Teste', '10', 'Centro', 'Cidade', 'SP', ' BRASIL'],
+            ['Empresa Teste', '01.234.567/0001-95', 'Contato', '11 999999999', 'contato@example.com', 'BRL', 'UN1', '01.234-567', 'Rua Teste', '10', 'Centro', 'Cidade', 'SP', ' BRASIL'],
         ],
         'Colaboradores': [
             ['Nome completo*', 'Sexo (M ou F)', 'CPF*', 'E-mail*', 'Data de nascimento', 'Código de integração Casafruti', 'Código de integração Extrafruti', 'Ativo (S ou N)*', 'Usuário', 'Senha', 'Centro de custo (Cód. no ERP)', 'Descrição centro de custo', 'CPF Usuário aprovador', 'Nome Usuário aprovador', 'Cargo', 'Nome da Mãe', 'Telefone', 'RG', 'CNH', 'Data validade CNH', 'Passaporte', 'Data validade passaporte', 'Nacionalidade'],
@@ -30,7 +30,7 @@ def source_file(path):
         ],
         'Centros de Custo': [
             ['Código Centro de custo*', 'Nome centro de Custo*', 'CPF Aprovador', 'Aprovador do centro de custo', 'Empresa(CNPJ)'],
-            ['001', 'Administrativo', None, None, '01.234.567/0001-89'],
+            ['001', 'Administrativo', None, None, '01.234.567/0001-95'],
         ],
         'Tipos de Despesa': [
             ['Nome da Despesa*', 'Validação', 'Item de Orçamento', 'Conta Contábil', 'Valor Limite', 'Aplicação'],
@@ -52,7 +52,7 @@ class EngineTests(unittest.TestCase):
         self.p.original_values['USERS:2'][4] = '2000-02-01'
         self.p.original_values['USERS:2'][8] = ' secret  '
         proposals = self.p.normalizations()
-        self.assertEqual({p['category'] for p in proposals}, {'Espaços', 'Documentos', 'Datas', 'Sim/Não'})
+        self.assertEqual({p['category'] for p in proposals}, {'Espaços', 'Documentos', 'Datas', 'Sim/Não', 'CEP', 'Telefones'})
         self.assertFalse(any(p['kind'] == 'USERS' and p['col'] == 8 for p in proposals))
         self.assertFalse(self.p.decisions)
         self.p.accept_normalizations(proposals[:1])
@@ -101,7 +101,7 @@ class EngineTests(unittest.TestCase):
     def test_mapping_and_normalization(self):
         a = self.p.analyze()
         self.assertEqual({k: len(v) for k, v in a.records.items()}, {'EMPLOYER': 1, 'CUST': 1, 'EXPENSES': 1, 'USERS': 3})
-        self.assertEqual(a.records['EMPLOYER'][0].values[1], '01234567000189')
+        self.assertEqual(a.records['EMPLOYER'][0].values[1], '01234567000195')
         self.assertEqual(a.records['EMPLOYER'][0].values[13], '01234567')
         self.assertEqual(a.records['EMPLOYER'][0].values[19], 'BRA')
         self.assertEqual(a.records['CUST'][0].values[1], '001')
@@ -128,23 +128,23 @@ class EngineTests(unittest.TestCase):
             self.p.accept_email(s.row, s.proposed)
 
     def test_batch_applies_both_duplicates_from_same_snapshot(self):
-        self.p.set_value('USERS', [2, 3], 9, '01234567000189')
-        self.p.confirm_domain('01234567000189', 'example.com')
+        self.p.set_value('USERS', [2, 3], 9, '01234567000195')
+        self.p.confirm_domain('01234567000195', 'example.com')
         preview = self.p.analyze().suggestions
         self.assertEqual(self.p.accept_all_emails(preview), (2, 0))
         self.assertEqual([r.values[3] for r in self.p.analyze().records['USERS'][:2]], [s.proposed for s in preview])
         self.assertFalse(self.p.analyze().suggestions)
 
     def test_batch_leaves_unconfirmed_rows_unchanged(self):
-        self.p.set_value('USERS', [2], 9, '01234567000189')
-        self.p.confirm_domain('01234567000189', 'example.com')
+        self.p.set_value('USERS', [2], 9, '01234567000195')
+        self.p.confirm_domain('01234567000195', 'example.com')
         preview = self.p.analyze().suggestions
         self.assertEqual(self.p.accept_all_emails(preview), (1, 1))
         self.assertEqual(self.p.analyze().records['USERS'][1].values[3], 'financeiro@example.com')
 
     def test_stale_batch_is_rejected_without_partial_changes(self):
-        self.p.set_value('USERS', [2, 3], 9, '01234567000189')
-        self.p.confirm_domain('01234567000189', 'example.com')
+        self.p.set_value('USERS', [2, 3], 9, '01234567000195')
+        self.p.confirm_domain('01234567000195', 'example.com')
         preview = self.p.analyze().suggestions
         self.p.set_value('USERS', [3], 0, 'Nome Alterado')
         before = copy.deepcopy(self.p.decisions)
@@ -161,18 +161,18 @@ class EngineTests(unittest.TestCase):
         self.assertTrue(any(h[3] == 'Domínio da sugestão aprovado neste lote' for h in self.p.history))
 
     def test_unit_domain_controls_email_and_explicit_acceptance(self):
-        self.p.set_value('USERS', [2, 3], 9, '01234567000189')
-        self.p.confirm_domain('01234567000189', '@unidade.example.com')
+        self.p.set_value('USERS', [2, 3], 9, '01234567000195')
+        self.p.confirm_domain('01234567000195', '@unidade.example.com')
         s = self.p.analyze().suggestions[0]
         self.assertEqual(s.proposed, '01234567890@unidade.example.com')
         self.p.accept_email(s.row, s.proposed)
         self.assertEqual(self.p.analyze().records['USERS'][0].values[3], s.proposed)
 
     def test_stale_suggestion_rejected(self):
-        self.p.set_value('USERS', [2], 9, '01234567000189')
-        self.p.confirm_domain('01234567000189', 'example.com')
+        self.p.set_value('USERS', [2], 9, '01234567000195')
+        self.p.confirm_domain('01234567000195', 'example.com')
         s = self.p.analyze().suggestions[0]
-        self.p.confirm_domain('01234567000189', 'another.example.com')
+        self.p.confirm_domain('01234567000195', 'another.example.com')
         with self.assertRaises(ValueError):
             self.p.accept_email(s.row, s.proposed)
 
@@ -181,6 +181,21 @@ class EngineTests(unittest.TestCase):
         a = self.p.analyze()
         self.assertEqual(a.records['USERS'][0].values[4], '13/09/198')
         self.assertTrue(any(i.kind == 'USERS' and i.row == 2 and i.col == 4 for i in a.blocking))
+
+    def test_cep_and_phone_normalizations(self):
+        self.p.original_values['EMPLOYER:2'][13] = '234567'
+        self.p.original_values['EMPLOYER:2'][3] = '(11) 99999-9999'
+        proposals = self.p.normalizations()
+        categories = {p['category'] for p in proposals}
+        self.assertIn('CEP', categories)
+        self.assertIn('Telefones', categories)
+        cep_prop = next(p for p in proposals if p['category'] == 'CEP')
+        self.assertEqual(cep_prop['after'], '00234567')
+
+    def test_cnpj_checksum_validation(self):
+        self.p.set_value('EMPLOYER', [2], 1, '01234567000189')  # Invalid CNPJ verifier
+        a = self.p.analyze()
+        self.assertTrue(any(i.kind == 'EMPLOYER' and i.row == 2 and i.col == 1 and 'CNPJ inválido' in i.message for i in a.issues))
 
     def test_duplicate_cpf_keeps_both_records(self):
         self.p.set_value('USERS', [3], 2, '01234567890')
@@ -208,12 +223,12 @@ class EngineTests(unittest.TestCase):
         report.close()
 
     def test_session_restores_decisions_and_rejects_different_source(self):
-        self.p.set_value('USERS', [2], 9, '01234567000189')
+        self.p.set_value('USERS', [2], 9, '01234567000195')
         session = self.root / 'review.json'
         self.p.save_session(session)
         other = Project(self.source, BASE / 'templates')
         other.load_session(session)
-        self.assertEqual(other.analyze().records['USERS'][0].values[9], '01234567000189')
+        self.assertEqual(other.analyze().records['USERS'][0].values[9], '01234567000195')
         wb = openpyxl.load_workbook(self.source)
         wb['Colaboradores']['A2'] = 'Outro Nome'
         wb.save(self.source)
@@ -270,7 +285,7 @@ class EngineTests(unittest.TestCase):
         self.p.set_value('USERS', [2], 5, '100')
         self.p.set_value('USERS', [3], 5, '200')
         self.p.set_value('USERS', [4], 5, '300')
-        self.p.set_value('USERS', [2, 3, 4], 9, '01234567000189')
+        self.p.set_value('USERS', [2, 3, 4], 9, '01234567000195')
         self.p.set_value('USERS', [2], 3, 'pessoa1@example.com')
         self.p.set_value('USERS', [3], 3, 'pessoa2@example.com')
         self.assertFalse(self.p.analyze().blocking)

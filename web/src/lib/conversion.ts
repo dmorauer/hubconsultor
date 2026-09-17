@@ -28,6 +28,22 @@ const digits = (value: unknown) => text(value).replace(/\D/g, "");
 const yesNo = (value: unknown) => { const v = text(value).toUpperCase(); if (!v) return "S"; return v.startsWith("S") ? "S" : v.startsWith("N") ? "N" : v; };
 const compactDocument = (value: unknown, length: number) => { const valueDigits = digits(value); return valueDigits ? valueDigits.padStart(length, "0") : ""; };
 
+export function isValidCnpj(cnpj: string): boolean {
+  const doc = digits(cnpj);
+  if (doc.length !== 14) return false;
+  if (/^(\d)\1{13}$/.test(doc)) return false;
+  const w1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+  const s1 = doc.slice(0, 12).split("").reduce((acc, digit, idx) => acc + parseInt(digit, 10) * w1[idx], 0);
+  const r1 = s1 % 11;
+  const d1 = r1 < 2 ? 0 : 11 - r1;
+  if (parseInt(doc[12], 10) !== d1) return false;
+  const w2 = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+  const s2 = doc.slice(0, 13).split("").reduce((acc, digit, idx) => acc + parseInt(digit, 10) * w2[idx], 0);
+  const r2 = s2 % 11;
+  const d2 = r2 < 2 ? 0 : 11 - r2;
+  return parseInt(doc[13], 10) === d2;
+}
+
 function value(headers: unknown[], row: unknown[], label: string) {
   const index = headers.findIndex((header) => norm(header) === norm(label));
   return index < 0 ? "" : text(row[index]);

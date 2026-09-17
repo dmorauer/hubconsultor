@@ -2,13 +2,13 @@
 
 import { ChangeEvent, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
-import { Conversion, exportDefaults, exportHierarchyCsv, exportSynchronizer, getHierarchyIssues, HierarchyMode, HierarchyNode, outputHeaders, parseHierarchyWorkbook, parseWorkbook } from "@/lib/conversion";
+import { Conversion, exportDefaults, exportHierarchyCsv, exportSynchronizer, getHierarchyIssues, HierarchyMode, HierarchyNode, isValidCnpj, outputHeaders, parseHierarchyWorkbook, parseWorkbook } from "@/lib/conversion";
 
 type LoadKey = "EMPLOYER" | "CUST" | "EXPENSES" | "USERS";
 type User = { row: number; name: string; cpf: string; email: string; sexo: string; ativo: string };
 type EditableUserField = keyof Pick<User, "name" | "cpf" | "email" | "sexo" | "ativo">;
 type UserEditor = { row: number; field: EditableUserField; label: string; value: string };
-type Fix = { id: string; row: number; field: keyof Pick<User, "cpf" | "sexo" | "ativo">; before: string; after: string; reason: string };
+type Fix = { id: string; row: number; field: string; before: string; after: string; reason: string };
 type Issue = { row: number; field: string; reason: string; severity: "Erro" | "Pendente"; kind?: LoadKey };
 type History = { before: User[]; label: string };
 type ExportMode = "DIRECT" | "SYNCHRONIZER";
@@ -41,13 +41,32 @@ export default function Home() {
   const [integrationPattern, setIntegrationPattern] = useState("0.{EXTRAFRUTI}.1.{CASAFRUTI}");
   const [emailDomain, setEmailDomain] = useState(""); const sessionInput = useRef<HTMLInputElement>(null);
   const [outputKind, setOutputKind] = useState<LoadKey>("USERS");
-  const fixes = useMemo<Fix[]>(() => users.flatMap((user) => {
-    const proposal: Fix[] = []; const cpf = digits(user.cpf);
-    if (cpf && cpf.length < 11) proposal.push({ id: `${user.row}-cpf`, row: user.row, field: "cpf", before: user.cpf, after: cpf.padStart(11, "0"), reason: "CPF será completado com zeros à esquerda." });
-    const sexo = normalizeSex(user.sexo); if (sexo && sexo !== user.sexo) proposal.push({ id: `${user.row}-sexo`, row: user.row, field: "sexo", before: user.sexo, after: sexo, reason: "Sexo será normalizado para M ou F." });
-    const ativo = normalizeActive(user.ativo); if (ativo !== user.ativo) proposal.push({ id: `${user.row}-ativo`, row: user.row, field: "ativo", before: user.ativo || "(vazio)", after: ativo, reason: "Ativo será normalizado para S ou N." });
-    return proposal;
-  }), [users]);
+  const fixes = useMemo<Fix[]>(() => {
+    const userFixes = users.flatMap((user) => {
+      const proposal: Fix[] = []; const cpf = digits(user.cpf);
+      if (cpf && cpf.length < 11) proposal.push({ id: `${user.row}-cpf`, row: user.row, field: "cpf", before: user.cpf, after: cpf.padStart(11, "0"), reason: "CPF será completado com zeros à esquerda." });
+      const sexo = normalizeSex(user.sexo); if (sexo && sexo !== user.sexo) proposal.push({ id: `${user.row}-sexo`, row: user.row, field: "sexo", before: user.sexo, after: sexo, reason: "Sexo será normalizado para M ou F." });
+      const ativo = normalizeActive(user.ativo); if (ativo !== user.ativo) proposal.push({ id: `${user.row}-ativo`, row: user.row, field: "ativo", before: user.ativo || "(vazio)", after: ativo, reason: "Ativo será normalizado para S ou N." });
+      return proposal;
+    });
+    const employerFixes: Fix[] = [];
+    if (conversion?.EMPLOYER) {
+      conversion.EMPLOYER.forEach((record) => {
+        const rawCep = record.values[13];
+        const cepDigits = digits(rawCep);
+        if (cepDigits && cepDigits.length < 8) {
+          const padded = cepDigits.padStart(8, "0");
+          if (padded !== rawCep) employerFixes.push({ id: `emp-${record.sourceRow}-cep`, row: record.sourceRow, field: "CEP (Unidades)", before: rawCep, after: padded, reason: "CEP será completado com zeros à esquerda." });
+        }
+        const rawTel = record.values[3];
+        const telDigits = digits(rawTel);
+        if (telDigits && telDigits !== rawTel && telDigits.length >= 8 && telDigits.length <= 11) {
+          employerFixes.push({ id: `emp-${record.sourceRow}-tel`, row: record.sourceRow, field: "Telefone (Unidades)", before: rawTel, after: telDigits, reason: "Telefone será normalizado para apenas dígitos." });
+        }
+      });
+    }
+    return [...userFixes, ...employerFixes];
+  }, [users, conversion]);
   const issues = useMemo<Issue[]>(() => {
     const repeated = new Set(users.filter((user) => user.email).map((user) => user.email.toLowerCase()).filter((email, _, all) => all.filter((current) => current === email).length > 1));
     const repeatedCpf = new Set(users.map((user) => digits(user.cpf)).filter((cpf, _, all) => cpf && all.filter((current) => current === cpf).length > 1));
@@ -65,7 +84,7 @@ export default function Home() {
     });
   }, [users]);
   const crossIssues = useMemo<Issue[]>(() => { if (!conversion) return []; const companyRefs = new Set(conversion.EMPLOYER.flatMap((record) => [record.values[1], record.values[6]].filter(Boolean).map(norm))); const costRefs = new Set(conversion.CUST.map((record) => norm(record.values[1])).filter(Boolean)); return conversion.USERS.flatMap((record) => { const list: Issue[] = []; if (record.values[9] && !companyRefs.has(norm(record.values[9]))) list.push({ row: record.sourceRow, field: "Empresa", reason: "Empresa não localizada nesta carga; ela pode já existir no Paytrack.", severity: "Pendente" }); if (record.values[10] && !costRefs.has(norm(record.values[10]))) list.push({ row: record.sourceRow, field: "Centro de custo", reason: "Centro de custo não localizado nesta carga; ele pode já existir no Paytrack.", severity: "Pendente" }); return list; }); }, [conversion]);
-  const loadIssues = useMemo<Issue[]>(() => { if (!conversion) return []; const result: Issue[] = []; const companyRefs = new Set(conversion.EMPLOYER.flatMap((record) => [record.values[1], record.values[6]].filter(Boolean).map(norm))); conversion.EMPLOYER.forEach((record) => { if (!/^\d{14}$/.test(digits(record.values[1]))) result.push({ kind: "EMPLOYER", row: record.sourceRow, field: "CNPJ", reason: "CNPJ deve conter exatamente 14 dígitos.", severity: "Erro" }); if (record.values[4] && !validEmail(record.values[4])) result.push({ kind: "EMPLOYER", row: record.sourceRow, field: "E-mail", reason: "Formato de e-mail inválido.", severity: "Erro" }); }); conversion.CUST.forEach((record) => { if (!record.values[1]) result.push({ kind: "CUST", row: record.sourceRow, field: "Identificador", reason: "Campo obrigatório vazio.", severity: "Pendente" }); if (!record.values[2]) result.push({ kind: "CUST", row: record.sourceRow, field: "Descrição", reason: "Campo obrigatório vazio.", severity: "Pendente" }); if (record.values[4] && !companyRefs.has(norm(record.values[4]))) result.push({ kind: "CUST", row: record.sourceRow, field: "Empresa", reason: "Empresa não localizada nesta carga; ela pode já existir no Paytrack.", severity: "Pendente" }); }); conversion.EXPENSES.forEach((record) => { if (!record.values[1]) result.push({ kind: "EXPENSES", row: record.sourceRow, field: "Descrição", reason: "Campo obrigatório vazio.", severity: "Pendente" }); }); return result; }, [conversion]);
+  const loadIssues = useMemo<Issue[]>(() => { if (!conversion) return []; const result: Issue[] = []; const companyRefs = new Set(conversion.EMPLOYER.flatMap((record) => [record.values[1], record.values[6]].filter(Boolean).map(norm))); conversion.EMPLOYER.forEach((record) => { if (!/^\d{14}$/.test(digits(record.values[1]))) result.push({ kind: "EMPLOYER", row: record.sourceRow, field: "CNPJ", reason: "CNPJ deve conter exatamente 14 dígitos.", severity: "Erro" }); else if (!isValidCnpj(record.values[1])) result.push({ kind: "EMPLOYER", row: record.sourceRow, field: "CNPJ", reason: "CNPJ inválido (dígitos verificadores incorretos). Confirme o documento.", severity: "Erro" }); if (record.values[4] && !validEmail(record.values[4])) result.push({ kind: "EMPLOYER", row: record.sourceRow, field: "E-mail", reason: "Formato de e-mail inválido.", severity: "Erro" }); }); conversion.CUST.forEach((record) => { if (!record.values[1]) result.push({ kind: "CUST", row: record.sourceRow, field: "Identificador", reason: "Campo obrigatório vazio.", severity: "Pendente" }); if (!record.values[2]) result.push({ kind: "CUST", row: record.sourceRow, field: "Descrição", reason: "Campo obrigatório vazio.", severity: "Pendente" }); if (record.values[4] && !companyRefs.has(norm(record.values[4]))) result.push({ kind: "CUST", row: record.sourceRow, field: "Empresa", reason: "Empresa não localizada nesta carga; ela pode já existir no Paytrack.", severity: "Pendente" }); }); conversion.EXPENSES.forEach((record) => { if (!record.values[1]) result.push({ kind: "EXPENSES", row: record.sourceRow, field: "Descrição", reason: "Campo obrigatório vazio.", severity: "Pendente" }); }); return result; }, [conversion]);
   const emailProposals = useMemo(() => { if (!/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(emailDomain)) return []; const duplicates = new Set(users.map((user) => user.email.toLowerCase()).filter((email, _, all) => email && all.filter((current) => current === email).length > 1)); return users.filter((user) => duplicates.has(user.email.toLowerCase()) && /^\d{11}$/.test(digits(user.cpf))).map((user) => ({ row: user.row, before: user.email, after: `${digits(user.cpf)}@${emailDomain.toLowerCase()}` })); }, [users, emailDomain]);
   const hierarchyIssues = useMemo(() => { const result = getHierarchyIssues(hierarchy); if (hierarchyMode === "HIERARQUIA_COLABORADORES") hierarchy.forEach((node) => { if (!node.travelerCpf) result.push({ sourceRow: node.sourceRow, field: "cpf_colaborador", reason: "Obrigatório para o tipo HIERARQUIA_COLABORADORES.", severity: "Erro" }); }); if (hierarchyMode === "HIERARQUIA_APROVADORES") hierarchy.forEach((node) => { if (!node.approverCpf) result.push({ sourceRow: node.sourceRow, field: "cpf_aprovador", reason: "Obrigatório para o tipo HIERARQUIA_APROVADORES.", severity: "Erro" }); }); return result; }, [hierarchy, hierarchyMode]);
   const hierarchyIssueGroups = useMemo(() => [...hierarchyIssues.reduce((groups, issue) => { const key = `${issue.severity}:${issue.field}:${issue.reason}`; const group = groups.get(key) ?? { ...issue, count: 0, rows: [] as number[] }; group.count += 1; group.rows.push(issue.sourceRow); groups.set(key, group); return groups; }, new Map<string, { sourceRow: number; field: string; reason: string; severity: "Erro" | "Pendente"; count: number; rows: number[] }>()).values()], [hierarchyIssues]);
@@ -98,7 +117,27 @@ export default function Home() {
     } catch (caught) { setHierarchy([]); setHierarchyName(""); setError(caught instanceof Error ? caught.message : "Não foi possível ler a hierarquia."); }
     finally { setHierarchyLoading(false); }
   }
-  function applyFixes() { if (!fixes.length || !window.confirm(`Aplicar ${fixes.length} correção(ões) propostas?`)) return; setHistory((current) => [...current, { before: users, label: `${fixes.length} correção(ões) em lote` }]); setUsers((current) => current.map((user) => fixes.filter((fix) => fix.row === user.row).reduce((next, fix) => ({ ...next, [fix.field]: fix.after }), user))); }
+  function applyFixes() {
+    if (!fixes.length || !window.confirm(`Aplicar ${fixes.length} correção(ões) propostas?`)) return;
+    setHistory((current) => [...current, { before: users, label: `${fixes.length} correção(ões) em lote` }]);
+    setUsers((current) => current.map((user) => fixes.filter((fix) => fix.row === user.row && fix.field in user).reduce((next, fix) => ({ ...next, [fix.field]: fix.after }), user)));
+    if (conversion) {
+      setConversion((current) => {
+        if (!current) return current;
+        const next = structuredClone(current);
+        fixes.forEach((fix) => {
+          if (fix.field === "CEP (Unidades)") {
+            const record = next.EMPLOYER.find((r) => r.sourceRow === fix.row);
+            if (record) record.values[13] = fix.after;
+          } else if (fix.field === "Telefone (Unidades)") {
+            const record = next.EMPLOYER.find((r) => r.sourceRow === fix.row);
+            if (record) record.values[3] = fix.after;
+          }
+        });
+        return next;
+      });
+    }
+  }
   function undo() { const last = history.at(-1); if (!last) return; setUsers(last.before); setHistory((current) => current.slice(0, -1)); }
   function openEditor(issue: Issue) { const fieldMap: Record<string, { field: EditableUserField; label: string }> = { Nome: { field: "name", label: "Nome completo" }, CPF: { field: "cpf", label: "CPF" }, "E-mail": { field: "email", label: "E-mail" }, Sexo: { field: "sexo", label: "Sexo" } }; const target = !issue.kind ? fieldMap[issue.field] : undefined; const user = users.find((item) => item.row === issue.row); if (!target || !user) return; setEditor({ row: user.row, field: target.field, label: target.label, value: user[target.field] }); }
   function applyEditor() { if (!editor) return; const nextValue = editor.value.trim(); const current = users.find((user) => user.row === editor.row); if (!current || current[editor.field] === nextValue) { setEditor(null); return; } setHistory((items) => [...items, { before: users, label: `${editor.label} ajustado na linha ${editor.row}` }]); setUsers((items) => items.map((user) => user.row === editor.row ? { ...user, [editor.field]: nextValue } : user)); setEditor(null); }
