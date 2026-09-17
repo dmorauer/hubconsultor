@@ -40,7 +40,7 @@ def mapped_value(mapping, label):
     if target in mapping:
         return mapping[target]
     candidates = [value for key, value in mapping.items()
-                  if SequenceMatcher(None, target, key).ratio() >= .80]
+                  if SequenceMatcher(None, target, key).ratio() >= .82]
     return candidates[0] if len(candidates) == 1 else None
 
 def text(value):
@@ -52,6 +52,26 @@ def text(value):
 
 def document(value):
     return re.sub(r'[.\-/\s]', '', text(value))
+
+def is_valid_cpf(cpf):
+    cpf = document(cpf)
+    if not re.fullmatch(r'\d{11}', cpf):
+        return False
+    if cpf == cpf[0] * 11:
+        return False
+    s1 = sum(int(cpf[i]) * (10 - i) for i in range(9))
+    d1 = 11 - (s1 % 11)
+    if d1 >= 10:
+        d1 = 0
+    if int(cpf[9]) != d1:
+        return False
+    s2 = sum(int(cpf[i]) * (11 - i) for i in range(10))
+    d2 = 11 - (s2 % 11)
+    if d2 >= 10:
+        d2 = 0
+    if int(cpf[10]) != d2:
+        return False
+    return True
 
 def email_valid(value):
     return bool(re.fullmatch(r'[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+', text(value)))
@@ -271,6 +291,12 @@ class Project:
                     raise ValueError(f'Aba ausente na origem: {sheet_name}.')
                 sheet = wb[sheet_name]
                 cols = {norm(c.value): c.column for c in sheet[1] if c.value is not None}
+                header_names = [text(c.value) for c in sheet[1] if c.value is not None]
+                header_counts = Counter(norm(h) for h in header_names)
+                for h_norm, count in header_counts.items():
+                    if count > 1:
+                        dup_names = [h for h in header_names if norm(h) == h_norm]
+                        self.base_issues.append(Issue(kind, 0, None, f'Colunas duplicadas/conflito no cabeçalho: {", ".join(dup_names)}. Confira a estrutura.', 'Aviso'))
                 required = {'EMPLOYER': ['Nome', 'CNPJ'], 'CUST': ['Código Centro de custo', 'Nome centro de Custo'],
                             'EXPENSES': ['Nome da Despesa'], 'USERS': ['Nome completo', 'CPF', 'E-mail', 'Ativo (S ou N)']}[kind]
                 for header in required:
@@ -337,7 +363,12 @@ class Project:
             digits = re.sub(r'[^0-9]', '', value)
             return digits.zfill(11 if kind == 'USERS' else 14) if digits else ''
         if kind == 'USERS' and col == 1:
-            return value[0].upper() if value and value[0].upper() in ('M', 'F') else value
+            v_norm = norm(value)
+            if v_norm in ('m', 'masculino'):
+                return 'M'
+            if v_norm in ('f', 'feminino'):
+                return 'F'
+            return text(value).strip()
         if kind == 'EMPLOYER' and col == 13:
             return document(value)
         if col in ENUMS[kind]:
@@ -616,8 +647,11 @@ class Project:
                         if v[c] and not email_valid(v[c]):
                             add(kind, row, c, 'Formato de e-mail inválido.', 'Erro')
                 elif kind == 'USERS':
-                    if v[2] and not re.fullmatch(r'\d{11}', str(v[2])):
-                        add(kind, row, 2, 'CPF deve conter exatamente 11 dígitos; valores maiores não são cortados.', 'Erro')
+                    if v[2]:
+                        if not re.fullmatch(r'\d{11}', str(v[2])):
+                            add(kind, row, 2, 'CPF deve conter exatamente 11 dígitos; valores maiores não são cortados.', 'Erro')
+                        elif not is_valid_cpf(v[2]):
+                            add(kind, row, 2, 'CPF inválido (dígitos verificadores incorretos). Confirme o documento.', 'Erro')
                     if v[3] and not email_valid(v[3]):
                         add(kind, row, 3, 'Formato de e-mail inválido.', 'Erro')
                     if v[4] and not isinstance(v[4], datetime):
@@ -629,6 +663,9 @@ class Project:
                     extra = mapped_value(src, 'Código de integração Extrafruti')
                     if (text(casa) or text(extra)) and not v[5]:
                         add(kind, row, 5, 'Há código(s) de integração Casafruti e/ou Extrafruti. Revise a concatenação sugerida.')
+                    approver_cpf = document(src.get('cpfusuarioaprovador', ''))
+                    if approver_cpf and v[2] and document(v[2]) == approver_cpf:
+                        add(kind, row, 12, 'Possível autoaprovação detectada: o CPF do usuário e do aprovador são iguais. Revise.', 'Aviso')
                     if any(src.get(norm(k)) for k in ['CPF Usuário aprovador', 'Nome Usuário aprovador']) and not v[12]:
                         add(kind, row, 12, 'A origem identifica o aprovador por CPF/nome; o destino pede usuário. Deseja informar agora?')
 

@@ -25,8 +25,8 @@ def source_file(path):
         'Colaboradores': [
             ['Nome completo*', 'Sexo (M ou F)', 'CPF*', 'E-mail*', 'Data de nascimento', 'Código de integração Casafruti', 'Código de integração Extrafruti', 'Ativo (S ou N)*', 'Usuário', 'Senha', 'Centro de custo (Cód. no ERP)', 'Descrição centro de custo', 'CPF Usuário aprovador', 'Nome Usuário aprovador', 'Cargo', 'Nome da Mãe', 'Telefone', 'RG', 'CNH', 'Data validade CNH', 'Passaporte', 'Data validade passaporte', 'Nacionalidade'],
             ['João da Silva', 'M', '01234567890', ' FINANCEIRO@example.com ', '01/02/1980', 100, 200, 'SIM'],
-            ['João Silva', 'M', '01234567891', 'financeiro@example.com', '02/03/1981', None, 300, 'SIM'],
-            ['Maria Silva', 'F', '01234567892', 'joao.silva@example.com', '03/04/1982', None, None, 'SIM'],
+            ['João Silva', 'M', '11144477735', 'financeiro@example.com', '02/03/1981', None, 300, 'SIM'],
+            ['Maria Silva', 'F', '52998224725', 'joao.silva@example.com', '03/04/1982', None, None, 'SIM'],
         ],
         'Centros de Custo': [
             ['Código Centro de custo*', 'Nome centro de Custo*', 'CPF Aprovador', 'Aprovador do centro de custo', 'Empresa(CNPJ)'],
@@ -111,15 +111,15 @@ class EngineTests(unittest.TestCase):
     def test_no_automatic_company_or_ambiguous_code(self):
         a = self.p.analyze()
         self.assertEqual(a.records['USERS'][0].values[5], '')
-        self.assertEqual(a.records['USERS'][1].values[5], '300')
+        self.assertEqual(a.records['USERS'][1].values[5], '')
         self.assertTrue(all(r.values[9] == '' for r in a.records['USERS']))
         self.assertTrue(any(i.row == 2 and i.col == 5 for i in a.issues))
 
     def test_suggestions_are_unique_and_do_not_apply(self):
         a = self.p.analyze()
         self.assertEqual(len(a.suggestions), 2)
-        self.assertEqual(a.suggestions[0].proposed, 'joao.silva2@example.com')
-        self.assertEqual(a.suggestions[1].proposed, 'joao.silva3@example.com')
+        self.assertEqual(a.suggestions[0].proposed, '01234567890@example.com')
+        self.assertEqual(a.suggestions[1].proposed, '11144477735@example.com')
         self.assertEqual(a.records['USERS'][0].values[3], 'FINANCEIRO@example.com')
 
     def test_accept_requires_domain_confirmation(self):
@@ -164,7 +164,7 @@ class EngineTests(unittest.TestCase):
         self.p.set_value('USERS', [2, 3], 9, '01234567000189')
         self.p.confirm_domain('01234567000189', '@unidade.example.com')
         s = self.p.analyze().suggestions[0]
-        self.assertEqual(s.proposed, 'joao.silva@unidade.example.com')
+        self.assertEqual(s.proposed, '01234567890@unidade.example.com')
         self.p.accept_email(s.row, s.proposed)
         self.assertEqual(self.p.analyze().records['USERS'][0].values[3], s.proposed)
 
@@ -268,6 +268,8 @@ class EngineTests(unittest.TestCase):
         self.p.set_value('EXPENSES', [2], 0, 'DESP001')
         self.p.set_value('EXPENSES', [2], 4, 'VALOR')
         self.p.set_value('USERS', [2], 5, '100')
+        self.p.set_value('USERS', [3], 5, '200')
+        self.p.set_value('USERS', [4], 5, '300')
         self.p.set_value('USERS', [2, 3, 4], 9, '01234567000189')
         self.p.set_value('USERS', [2], 3, 'pessoa1@example.com')
         self.p.set_value('USERS', [3], 3, 'pessoa2@example.com')
