@@ -23,7 +23,7 @@ const norm = (value: unknown) => String(value ?? "").normalize("NFD").replace(/[
 const text = (value: unknown) => String(value ?? "").trim();
 const digits = (value: unknown) => text(value).replace(/\D/g, "");
 const yesNo = (value: unknown) => { const v = text(value).toUpperCase(); return v === "SIM" ? "S" : v === "NÃO" || v === "NAO" ? "N" : v; };
-const document = (value: unknown, length: number) => { const valueDigits = digits(value); return valueDigits ? valueDigits.padStart(length, "0") : ""; };
+const compactDocument = (value: unknown, length: number) => { const valueDigits = digits(value); return valueDigits ? valueDigits.padStart(length, "0") : ""; };
 
 function value(headers: unknown[], row: unknown[], label: string) {
   const index = headers.findIndex((header) => norm(header) === norm(label));
@@ -43,10 +43,10 @@ export function parseWorkbook(buffer: ArrayBuffer): Conversion {
       const source = Object.fromEntries(headers.map((header, column) => [text(header), text(row[column])]));
       if (kind === "EXPENSES" && text(row[0]).toUpperCase().startsWith("OBS.:")) return [];
       let values: string[];
-      if (kind === "EMPLOYER") values = [value(headers,row,"Nome"), document(value(headers,row,"CNPJ"),14), value(headers,row,"Nome para contato"), value(headers,row,"Telefone"), value(headers,row,"E-mail"), value(headers,row,"Moeda (BRL, EUR, USD)"), value(headers,row,"Código de integração"), "", "", "", "", "", "", digits(value(headers,row,"CEP")), value(headers,row,"Logradouro"), value(headers,row,"Número"), value(headers,row,"Bairro"), value(headers,row,"Cidade"), value(headers,row,"Estado"), value(headers,row,"País")];
+      if (kind === "EMPLOYER") values = [value(headers,row,"Nome"), compactDocument(value(headers,row,"CNPJ"),14), value(headers,row,"Nome para contato"), value(headers,row,"Telefone"), value(headers,row,"E-mail"), value(headers,row,"Moeda (BRL, EUR, USD)"), value(headers,row,"Código de integração"), "", "", "", "", "", "", digits(value(headers,row,"CEP")), value(headers,row,"Logradouro"), value(headers,row,"Número"), value(headers,row,"Bairro"), value(headers,row,"Cidade"), value(headers,row,"Estado"), value(headers,row,"País")];
       else if (kind === "CUST") values = ["", value(headers,row,"Código Centro de custo"), value(headers,row,"Nome centro de Custo"), "", value(headers,row,"Empresa(CNPJ)")];
       else if (kind === "EXPENSES") values = ["", value(headers,row,"Nome da Despesa"), "", "", "", value(headers,row,"Item de Orçamento"), "", "", "", "", "", "", "", "", "", ""];
-      else values = [value(headers,row,"Nome completo"), value(headers,row,"Sexo (M ou F)"), document(value(headers,row,"CPF"),11), value(headers,row,"E-mail"), value(headers,row,"Data de nascimento"), value(headers,row,"Código de integração"), yesNo(value(headers,row,"Ativo (S ou N)")), value(headers,row,"Usuário"), value(headers,row,"Senha"), value(headers,row,"Empresa (CNPJ)"), value(headers,row,"Centro de custo (Cód. no ERP)"), value(headers,row,"Descrição centro de custo"), "", ""];
+      else values = [value(headers,row,"Nome completo"), value(headers,row,"Sexo (M ou F)"), compactDocument(value(headers,row,"CPF"),11), value(headers,row,"E-mail"), value(headers,row,"Data de nascimento"), value(headers,row,"Código de integração"), yesNo(value(headers,row,"Ativo (S ou N)")), value(headers,row,"Usuário"), value(headers,row,"Senha"), value(headers,row,"Empresa (CNPJ)"), value(headers,row,"Centro de custo (Cód. no ERP)"), value(headers,row,"Descrição centro de custo"), "", ""];
       return [{ sourceRow: index + 2, values, source }];
     });
   });
