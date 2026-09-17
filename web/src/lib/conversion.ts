@@ -41,7 +41,7 @@ export function parseHierarchyWorkbook(buffer: ArrayBuffer): HierarchyNode[] {
   required.forEach((header) => { if (!headers.some((cell) => norm(cell) === norm(header))) throw new Error(`Hierarquia: coluna obrigatória ausente: ${header}.`); });
   return data.flatMap((row, index) => {
     if (!row.some((cell) => text(cell))) return [];
-    return [{ sourceRow: index + 2, root: value(headers, row, "identificador_raiz"), parent: value(headers, row, "identificador_pai"), parentDescription: value(headers, row, "descricao_pai"), id: value(headers, row, "identificador"), description: value(headers, row, "descricao"), active: yesNo(value(headers, row, "ativo")), company: value(headers, row, "empresa"), allowanceId: value(headers, row, "identificador_alcada"), travelerCpf: compactDocument(value(headers, row, "cpf_colaborador"), 11), approverCpf: digits(value(headers, row, "cpf_aprovador")) }];
+    return [{ sourceRow: index + 2, root: value(headers, row, "identificador_raiz"), parent: value(headers, row, "identificador_pai"), parentDescription: value(headers, row, "descricao_pai"), id: value(headers, row, "identificador"), description: value(headers, row, "descricao"), active: value(headers, row, "ativo") || "S", company: value(headers, row, "empresa"), allowanceId: value(headers, row, "identificador_alcada"), travelerCpf: compactDocument(value(headers, row, "cpf_colaborador"), 11), approverCpf: digits(value(headers, row, "cpf_aprovador")) }];
   });
 }
 
@@ -98,10 +98,11 @@ export async function exportDefaults(conversion: Conversion) {
 const csvCell = (value: unknown) => `"${String(value ?? "").replace(/"/g, '""')}"`;
 const sourceValue = (source: Record<string, string>, label: string) => Object.entries(source).find(([header]) => norm(header) === norm(label))?.[1] ?? "";
 function hierarchyCsv(hierarchy: HierarchyNode[], hierarchyMode: HierarchyMode) {
-  const hierarchyHeaders = ["identificador_raiz", "identificador_pai", "descricao_pai", "identificador", "descricao", "ativo", "empresa", "identificador_alcada"];
-  const additionalHeader = hierarchyMode === "HIERARQUIA_COLABORADORES" ? "cpf_colaborador" : hierarchyMode === "HIERARQUIA_APROVADORES" ? "cpf_aprovador" : "";
-  const rows = hierarchy.map((node) => { const base = [node.root, node.parent, node.parentDescription, node.id, node.description, node.active, node.company, node.allowanceId]; return additionalHeader ? [...base, hierarchyMode === "HIERARQUIA_COLABORADORES" ? node.travelerCpf : node.approverCpf] : base; });
-  return [[...hierarchyHeaders, ...(additionalHeader ? [additionalHeader] : [])], ...rows].map((row) => row.map(csvCell).join(",")).join("\r\n");
+  const baseHeaders = ["identificador_raiz", "identificador_pai", "descricao_pai", "identificador", "descricao", "ativo", "empresa"];
+  const linkHeader = hierarchyMode === "HIERARQUIA_COLABORADORES" ? "cpf_colaborador" : hierarchyMode === "HIERARQUIA_APROVADORES" ? "cpf_aprovador" : "";
+  const headers = linkHeader ? [...baseHeaders, linkHeader, "identificador_alcada"] : [...baseHeaders, "identificador_alcada"];
+  const rows = hierarchy.map((node) => { const base = [node.root, node.parent, node.parentDescription, node.id, node.description, node.active, node.company]; return linkHeader ? [...base, hierarchyMode === "HIERARQUIA_COLABORADORES" ? node.travelerCpf : node.approverCpf, node.allowanceId] : [...base, node.allowanceId]; });
+  return [headers, ...rows].map((row) => row.map(csvCell).join(",")).join("\r\n");
 }
 
 export function exportHierarchyCsv(hierarchy: HierarchyNode[], hierarchyMode: HierarchyMode) {
