@@ -4,6 +4,8 @@ import JSZip from "jszip";
 export type Kind = "EMPLOYER" | "CUST" | "EXPENSES" | "USERS";
 export type RecordRow = { sourceRow: number; values: string[]; source: Record<string, string> };
 export type Conversion = Record<Kind, RecordRow[]>;
+export type HierarchyNode = { sourceRow: number; root: string; parent: string; parentDescription: string; id: string; description: string; active: string; company: string; allowanceId: string };
+export type HierarchyIssue = { sourceRow: number; field: string; reason: string; severity: "Erro" | "Pendente" };
 
 const definitions: Record<Kind, { sheet: string; required: string[]; width: number }> = {
   EMPLOYER: { sheet: "Empresas", required: ["Nome", "CNPJ"], width: 14 },
@@ -28,6 +30,34 @@ const compactDocument = (value: unknown, length: number) => { const valueDigits 
 function value(headers: unknown[], row: unknown[], label: string) {
   const index = headers.findIndex((header) => norm(header) === norm(label));
   return index < 0 ? "" : text(row[index]);
+}
+
+export function parseHierarchyWorkbook(buffer: ArrayBuffer): HierarchyNode[] {
+  const workbook = XLSX.read(buffer, { type: "array" }); const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  if (!sheet) throw new Error("A planilha de hierarquia não possui uma aba utilizável.");
+  const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: "" }); const [headers = [], ...data] = rows;
+  const required = ["identificador_raiz", "identificador_pai", "identificador", "descricao", "ativo", "empresa"];
+  required.forEach((header) => { if (!headers.some((cell) => norm(cell) === norm(header))) throw new Error(`Hierarquia: coluna obrigatória ausente: ${header}.`); });
+  return data.flatMap((row, index) => {
+    if (!row.some((cell) => text(cell))) return [];
+    return [{ sourceRow: index + 2, root: value(headers, row, "identificador_raiz"), parent: value(headers, row, "identificador_pai"), parentDescription: value(headers, row, "descricao_pai"), id: value(headers, row, "identificador"), description: value(headers, row, "descricao"), active: yesNo(value(headers, row, "ativo")), company: value(headers, row, "empresa"), allowanceId: value(headers, row, "identificador_alcada") }];
+  });
+}
+
+export function getHierarchyIssues(nodes: HierarchyNode[]): HierarchyIssue[] {
+  const repeated = new Set(nodes.map((node) => `${norm(node.root)}:${norm(node.id)}`).filter((key, _, all) => key && all.filter((current) => current === key).length > 1));
+  const known = new Set(nodes.map((node) => `${norm(node.root)}:${norm(node.id)}`));
+  return nodes.flatMap((node) => {
+    const issues: HierarchyIssue[] = [];
+    if (!node.root) issues.push({ sourceRow: node.sourceRow, field: "identificador_raiz", reason: "A hierarquia raiz deve ser informada e já existir no Paytrack.", severity: "Erro" });
+    if (!node.id) issues.push({ sourceRow: node.sourceRow, field: "identificador", reason: "Identificador obrigatório vazio.", severity: "Erro" });
+    if (!node.description) issues.push({ sourceRow: node.sourceRow, field: "descricao", reason: "Descrição obrigatória vazia.", severity: "Erro" });
+    if (node.id && norm(node.id) === norm(node.root)) issues.push({ sourceRow: node.sourceRow, field: "identificador", reason: "O identificador não pode ser igual ao identificador_raiz.", severity: "Erro" });
+    if (node.id && node.parent && norm(node.id) === norm(node.parent)) issues.push({ sourceRow: node.sourceRow, field: "identificador_pai", reason: "Um nó não pode ser pai de si mesmo.", severity: "Erro" });
+    if (repeated.has(`${norm(node.root)}:${norm(node.id)}`)) issues.push({ sourceRow: node.sourceRow, field: "identificador", reason: "Identificador repetido dentro da mesma raiz; o Sincronizador consolida essas linhas.", severity: "Pendente" });
+    if (node.parent && !known.has(`${norm(node.root)}:${norm(node.parent)}`)) issues.push({ sourceRow: node.sourceRow, field: "identificador_pai", reason: "Pai não está neste arquivo. Confirme que ele já existe na raiz no Paytrack.", severity: "Pendente" });
+    return issues;
+  });
 }
 
 export function parseWorkbook(buffer: ArrayBuffer): Conversion {
@@ -63,4 +93,17 @@ export async function exportDefaults(conversion: Conversion) {
   }
   const url = URL.createObjectURL(await zip.generateAsync({ type: "blob", compression: "DEFLATE" }));
   const anchor = document.createElement("a"); anchor.href = url; anchor.download = "CARGAS_PAYTRACK.zip"; anchor.click(); URL.revokeObjectURL(url);
+}
+
+const csvCell = (value: unknown) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+const sourceValue = (source: Record<string, string>, label: string) => Object.entries(source).find(([header]) => norm(header) === norm(label))?.[1] ?? "";
+
+export async function exportSynchronizer(conversion: Conversion, hierarchy: HierarchyNode[]) {
+  const zip = new JSZip();
+  const headers = ["nome", "sexo", "cpf", "email", "data_nascimento", "codigo_integracao", "ativo", "usuario", "senha", "empresa", "cargo", "nome_mae", "telefone", "rg", "cnh", "data_validade_cnh", "centro_custo_codigo_pai", "centro_custo_codigo", "centro_custo_descricao", "banco", "agencia", "conta"];
+  const users = conversion.USERS.map((record) => [record.values[0], record.values[1], record.values[2], record.values[3], record.values[4], record.values[5], record.values[6], record.values[7], record.values[8], record.values[9], sourceValue(record.source, "Cargo"), sourceValue(record.source, "Nome da mãe"), sourceValue(record.source, "Telefone"), sourceValue(record.source, "RG"), sourceValue(record.source, "CNH"), sourceValue(record.source, "Data de validade da CNH"), sourceValue(record.source, "Centro de custo (Cód. pai no ERP)"), record.values[10], record.values[11], sourceValue(record.source, "Banco"), sourceValue(record.source, "Agência"), sourceValue(record.source, "Conta")]);
+  zip.file("COLABORADORES.csv", [headers, ...users].map((row) => row.map(csvCell).join(",")).join("\r\n"));
+  if (hierarchy.length) { const hierarchyHeaders = ["identificador_raiz", "identificador_pai", "descricao_pai", "identificador", "descricao", "ativo", "empresa", "identificador_alcada"]; zip.file("HIERARQUIA.csv", [hierarchyHeaders, ...hierarchy.map((node) => [node.root, node.parent, node.parentDescription, node.id, node.description, node.active, node.company, node.allowanceId])].map((row) => row.map(csvCell).join(",")).join("\r\n")); }
+  zip.file("LEIA-ME.txt", `Arquivos preparados para o Sincronizador Paytrack.\r\n\r\nEnvie cada CSV diretamente para /sincronizador/<seu_email>/ no Google Drive.\r\nMantenha os nomes exatos: COLABORADORES.csv e HIERARQUIA.csv.\r\nSelecione no Paystore o tipo correspondente a cada arquivo.\r\n`);
+  const url = URL.createObjectURL(await zip.generateAsync({ type: "blob", compression: "DEFLATE" })); const anchor = document.createElement("a"); anchor.href = url; anchor.download = "CARGAS_SINCRONIZADOR_PAYTRACK.zip"; anchor.click(); URL.revokeObjectURL(url);
 }
