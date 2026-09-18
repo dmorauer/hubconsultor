@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
-import { smStages } from "@/data/sm-process";
+import { getStages } from "@/lib/content";
 
-export default function SmProcess() {
-  redirect(`/processos/sm/${smStages[0].id}`);
+export default async function SmProcess() {
+  const stages = await getStages("sm");
+  redirect(`/processos/sm/${stages[0].id}`);
 }

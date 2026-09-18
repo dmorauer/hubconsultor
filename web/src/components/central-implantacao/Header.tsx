@@ -2,29 +2,26 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { smStages } from "@/data/sm-process";
-import { leStages } from "@/data/le-process";
-import { modules } from "@/data/modules";
-import { templates } from "@/data/templates";
+import { Stage, Template, ModuleInfo } from "@/data/types";
 
 type SearchItem = { label: string; group: string; href: string };
-
-const searchIndex: SearchItem[] = [
-  ...smStages.map((stage) => ({ label: stage.title, group: "Etapa · Small & Medium", href: `/processos/sm/${stage.id}` })),
-  ...leStages.map((stage) => ({ label: stage.title, group: "Etapa · Large Enterprise", href: `/processos/le/${stage.id}` })),
-  ...modules.map((mod) => ({ label: mod.title, group: "Módulo", href: `/processos/modulos/${mod.id}` })),
-  ...templates.map((tpl) => ({ label: tpl.title, group: "Template de e-mail", href: "/processos/templates" })),
-];
-
 const norm = (value: string) => value.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
-export default function Header() {
+export default function Header({ smStages, leStages, modules, templates }: { smStages: Stage[]; leStages: Stage[]; modules: ModuleInfo[]; templates: Template[] }) {
   const [query, setQuery] = useState("");
+
+  const searchIndex = useMemo<SearchItem[]>(() => [
+    ...smStages.map((stage) => ({ label: stage.title, group: "Etapa · Small & Medium", href: `/processos/sm/${stage.id}` })),
+    ...leStages.map((stage) => ({ label: stage.title, group: "Etapa · Large Enterprise", href: `/processos/le/${stage.id}` })),
+    ...modules.map((mod) => ({ label: mod.title, group: "Módulo", href: `/processos/modulos/${mod.id}` })),
+    ...templates.map((tpl) => ({ label: tpl.title, group: "Template de e-mail", href: "/processos/templates" })),
+  ], [smStages, leStages, modules, templates]);
+
   const results = useMemo(() => {
     const q = norm(query.trim());
     if (!q) return [];
     return searchIndex.filter((item) => norm(item.label).includes(q)).slice(0, 8);
-  }, [query]);
+  }, [query, searchIndex]);
 
   return (
     <header className="ci-header">

@@ -2,21 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { smStages } from "@/data/sm-process";
-import { leStages } from "@/data/le-process";
+import { Stage, ModuleInfo } from "@/data/types";
 
-const modules = [
-  { id: "expense", title: "Expense" },
-  { id: "travel", title: "Travel" },
-  { id: "vcn", title: "VCN" },
-  { id: "cartao-paytrack", title: "Cartão Paytrack" },
-  { id: "carteira-digital", title: "Carteira Digital" },
-  { id: "integracoes", title: "Integrações" },
-];
-
-export default function Sidebar({ isOwner }: { isOwner: boolean }) {
+export default function Sidebar({ isOwner, smStages, leStages, modules }: { isOwner: boolean; smStages: Stage[]; leStages: Stage[]; modules: ModuleInfo[] }) {
   const pathname = usePathname();
   const segment: "sm" | "le" | null = pathname.startsWith("/processos/sm") ? "sm" : pathname.startsWith("/processos/le") ? "le" : null;
+  const stages = segment === "sm" ? smStages : segment === "le" ? leStages : [];
 
   return (
     <aside className="ci-sidebar">
@@ -28,21 +19,11 @@ export default function Sidebar({ isOwner }: { isOwner: boolean }) {
       <Link href="/processos/sm" className={`ci-nav-link ${segment === "sm" ? "active" : ""}`}>Small &amp; Medium</Link>
       <Link href="/processos/le" className={`ci-nav-link ${segment === "le" ? "active" : ""}`}>Large Enterprise</Link>
 
-      {segment === "sm" && (
+      {segment && stages.length > 0 && (
         <>
           <div className="ci-nav-label">Etapas</div>
-          {smStages.map((stage) => (
-            <Link key={stage.id} href={`/processos/sm/${stage.id}`} className={`ci-nav-link ${pathname === `/processos/sm/${stage.id}` ? "active" : ""}`}>
-              {stage.order}. {stage.title}
-            </Link>
-          ))}
-        </>
-      )}
-      {segment === "le" && (
-        <>
-          <div className="ci-nav-label">Etapas</div>
-          {leStages.map((stage) => (
-            <Link key={stage.id} href={`/processos/le/${stage.id}`} className={`ci-nav-link ${pathname === `/processos/le/${stage.id}` ? "active" : ""}`}>
+          {stages.map((stage) => (
+            <Link key={stage.id} href={`/processos/${segment}/${stage.id}`} className={`ci-nav-link ${pathname === `/processos/${segment}/${stage.id}` ? "active" : ""}`}>
               {stage.order}. {stage.title}
             </Link>
           ))}

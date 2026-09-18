@@ -1,9 +1,9 @@
 import Link from "next/link";
-import { smStages } from "@/data/sm-process";
-import { leStages } from "@/data/le-process";
-import { templates } from "@/data/templates";
+import { getStages, getTemplates } from "@/lib/content";
 
-export default function CentralImplantacao() {
+export default async function CentralImplantacao() {
+  const [smStages, leStages, templates] = await Promise.all([getStages("sm"), getStages("le"), getTemplates()]);
+
   return (
     <>
       <h1 style={{ color: "var(--heading)", fontSize: 30, marginBottom: 6 }}>Central de Implantação</h1>

@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
-import { leStages } from "@/data/le-process";
+import { getStages } from "@/lib/content";
 
-export default function LeProcess() {
-  redirect(`/processos/le/${leStages[0].id}`);
+export default async function LeProcess() {
+  const stages = await getStages("le");
+  redirect(`/processos/le/${stages[0].id}`);
 }
