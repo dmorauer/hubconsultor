@@ -1,11 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getModule } from "@/data/modules";
+import { getModule } from "@/lib/content";
 import { TemplateList } from "@/components/central-implantacao/StageParts";
 
 export default async function ModulePage({ params }: { params: Promise<{ modulo: string }> }) {
   const { modulo } = await params;
-  const mod = getModule(modulo);
+  const mod = await getModule(modulo);
   if (!mod) notFound();
 
   return (

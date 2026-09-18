@@ -34,7 +34,7 @@ export default function AppHeader({ title, subtitle, backHref, backLabel }: AppH
       </div>
       <div className="hero-actions">
         {backHref && <Link className="back-button" href={backHref}>{backLabel ?? "← Início"}</Link>}
-        <button className="theme-toggle" onClick={toggleTheme} aria-label="Alternar tema claro/escuro">{theme === "dark" ? "☀️ Claro" : "🌙 Escuro"}</button>
+        <button className="theme-toggle" onClick={toggleTheme} aria-label="Alternar tema claro/escuro">{theme === "dark" ? "Claro" : "Escuro"}</button>
         <button className="logout-button" onClick={() => signOut({ callbackUrl: "/login" })}>Sair</button>
       </div>
     </section>

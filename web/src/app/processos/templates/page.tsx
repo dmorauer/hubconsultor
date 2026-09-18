@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { templates } from "@/data/templates";
+import { getTemplates } from "@/lib/content";
 
-export default function TemplatesPage() {
+export default async function TemplatesPage() {
+  const templates = await getTemplates();
   return (
     <>
       <nav className="ci-breadcrumb"><Link href="/processos">Central de Implantação</Link> {"> "}Templates de e-mail</nav>

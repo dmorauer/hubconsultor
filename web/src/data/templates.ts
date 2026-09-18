@@ -21,6 +21,9 @@ export const templates: Template[] = [
   { id: "tpl-status-report-atrasado", title: "Status Report ATRASADO" },
   { id: "tpl-status-report-reprogramado", title: "Status Report - Cronograma Reprogramado" },
   { id: "tpl-status-report-no-prazo", title: "Status Report - Cronograma no PRAZO" },
+  { id: "tpl-boas-vindas-le", title: "Boas Vindas - Projetos LE" },
+  { id: "tpl-kickoff-le", title: "Formalização do Kick Off - Projetos LE" },
+  { id: "tpl-orientacao-conciliacao", title: "4.2 Template Etapa 3 - Orientação sobre conciliação de faturas" },
 ];
 
 export function getTemplate(id: string): Template | undefined {

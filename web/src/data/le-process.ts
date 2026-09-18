@@ -1,6 +1,178 @@
 import { Stage } from "./types";
 
-// Fase 2: processo LE (Large Enterprise) ainda não foi estruturado nesta versão.
-// Ver "Processos internos LE.pdf" — o GP conduz proposta/kick-off antes do handoff
-// para o consultor, o que exige um modelo de swimlane (GP x Consultor) diferente do SM.
-export const leStages: Stage[] = [];
+// Conteúdo transcrito de "Processos internos LE.pdf". Diferença central em relação ao
+// SM: o Gerente de Projetos (GP) conduz proposta, alinhamento e kick off; só depois do
+// handoff o consultor assume a condução com o cliente. Isso é o que as etapas abaixo
+// deixam explícito através do campo "owner".
+export const leStages: Stage[] = [
+  {
+    id: "recebimento",
+    order: 1,
+    title: "Recebimento do projeto",
+    shortDescription: "O GP é notificado do início do projeto e responde ao cliente.",
+    owner: "gp",
+    sla: "2 dias úteis",
+    content: [
+      "Somos notificados do início do projeto de duas formas: atribuição no ticket do HubSpot, e e-mail enviado pela gestão nos apresentando ao cliente.",
+      "No LE, é o GP quem responde o e-mail de apresentação dentro do SLA — diferente do SM, onde o consultor responde.",
+    ],
+    checklist: ["Verificar a atribuição do projeto no ticket do HubSpot", "Responder o e-mail de apresentação dentro do SLA (\"Boas Vindas - Projetos LE\")"],
+    templateIds: ["tpl-boas-vindas-le"],
+  },
+  {
+    id: "analise-proposta",
+    order: 2,
+    title: "Análise da proposta",
+    shortDescription: "O GP analisa a proposta comercial do projeto.",
+    owner: "gp",
+    content: ["O GP analisa a proposta comercial antes de qualquer alinhamento."],
+  },
+  {
+    id: "alinhamento-interno",
+    order: 3,
+    title: "Alinhamento interno com vendas",
+    shortDescription: "O GP alinha o histórico da venda com o time comercial.",
+    owner: "gp",
+    participants: ["vendas"],
+    content: ["O GP efetua uma agenda de alinhamento interno com o time de vendas."],
+  },
+  {
+    id: "alinhamento-inicial-cliente",
+    order: 4,
+    title: "Alinhamento inicial com o cliente",
+    shortDescription: "Primeira conversa do GP com o cliente.",
+    owner: "gp",
+    participants: ["cliente"],
+    content: ["O GP agenda um alinhamento inicial com o cliente."],
+  },
+  {
+    id: "criacao-cronograma",
+    order: 5,
+    title: "Criação do cronograma",
+    shortDescription: "O GP monta o cronograma do projeto no Smartsheet.",
+    owner: "gp",
+    content: ["O GP cria o cronograma do projeto."],
+    warnings: ["Alterações de data e reprogramação de atividades no cronograma devem ser feitas pelo Gerente de Projetos, mesmo depois do handoff para o consultor."],
+  },
+  {
+    id: "kick-off",
+    order: 6,
+    title: "Kick-off",
+    shortDescription: "O GP conduz a reunião de abertura do projeto com o cliente.",
+    owner: "gp",
+    participants: ["cliente", "consultor"],
+    content: ["O GP conduz o kick off com o cliente.", "Formalizar com o e-mail \"Formalização do Kick Off - Projetos LE\" (também referenciado como \"2. Template Etapa 1 - Formalização - Kick-off\" no fluxo padrão)."],
+    templateIds: ["tpl-kickoff-le", "tpl-kickoff-formalizacao"],
+  },
+  {
+    id: "handoff-consultor",
+    order: 7,
+    title: "Handoff para o consultor",
+    shortDescription: "A condução do projeto passa do GP para o consultor.",
+    owner: "gp",
+    participants: ["consultor", "cliente"],
+    content: [
+      "Após a execução do kick off, o GP sinaliza ao consultor para que ele possa agendar a definição de escopo com o cliente e solicitar as cargas.",
+      "O consultor deve responder o e-mail no qual o GP apresenta o consultor (\"Apresentação do Consultor LE\"), propondo a agenda de definição de escopo.",
+      "Solicitar os requisitos de cada módulo contratado com os e-mails padrão correspondentes.",
+      "Criar uma pasta para o cliente no Drive, na pasta \"Projetos L/E\", onde devem ser armazenadas todas as cargas e documentações.",
+    ],
+    templateIds: ["tpl-apresentacao-consultor-le", "tpl-cargas-expense", "tpl-requisitos-travel", "tpl-implantacao-vcn", "tpl-implantacao-cartao", "tpl-carteira-digital"],
+    moduleIds: ["expense", "travel", "vcn", "cartao-paytrack", "carteira-digital"],
+  },
+  {
+    id: "definicao-escopo",
+    order: 8,
+    title: "Definição de escopo",
+    shortDescription: "O consultor registra o escopo e obtém o aceite do cliente.",
+    owner: "consultor",
+    participants: ["cliente"],
+    content: [
+      "O consultor registra todo o escopo no Termo de escopo e o disponibiliza para aceite na base de produção do cliente.",
+      "E-mail a ser enviado ao cliente: \"3. Template - Envio do Termo de escopo\".",
+    ],
+    templateIds: ["tpl-termo-escopo"],
+    warnings: ["O aceite do escopo é obrigatório para seguir com a parametrização da base."],
+  },
+  {
+    id: "parametrizacao",
+    order: 9,
+    title: "Parametrização",
+    shortDescription: "Configuração da base conforme o escopo aceito.",
+    owner: "consultor",
+    content: ["Parametrização da base conforme o escopo aceito pelo cliente."],
+  },
+  {
+    id: "apresentacao-ferramenta",
+    order: 10,
+    title: "Apresentação da ferramenta",
+    shortDescription: "Apresentação da ferramenta parametrizada ao cliente.",
+    owner: "consultor",
+    participants: ["cliente"],
+    content: ["Apresentação da ferramenta já parametrizada ao cliente."],
+  },
+  {
+    id: "homologacao-assistida",
+    order: 11,
+    title: "Homologação assistida",
+    shortDescription: "Liberação do acesso para o cliente testar a base.",
+    owner: "consultor",
+    participants: ["cliente"],
+    content: ["Liberar o acesso à base para o cliente efetuar os testes.", "E-mail: \"4. Template Etapa 3 - Homologação\"."],
+    templateIds: ["tpl-homologacao"],
+  },
+  {
+    id: "retorno-testes",
+    order: 12,
+    title: "Retorno dos testes",
+    shortDescription: "Tratamento do retorno dos testes do cliente.",
+    owner: "cliente",
+    participants: ["consultor"],
+    content: ["Retorno dos testes realizados pelo cliente na base homologada."],
+  },
+  {
+    id: "aceite-homologacao",
+    order: 13,
+    title: "Aceite da homologação",
+    shortDescription: "Aceite formal do Termo de homologação, obrigatório para o go live.",
+    owner: "consultor",
+    participants: ["cliente"],
+    content: ["O aceite do Termo de homologação é obrigatório para o go live do projeto.", "E-mail: \"2. Template Etapa 3 - Aceite da Homologação\"."],
+    templateIds: ["tpl-aceite-homologacao"],
+    warnings: ["O aceite é obrigatório para o go live do projeto."],
+  },
+  {
+    id: "treinamento-adm",
+    order: 14,
+    title: "Treinamento de administrador",
+    shortDescription: "Treinamento do administrador da ferramenta.",
+    owner: "consultor",
+    participants: ["cliente"],
+    content: ["Treinamento de administrador.", "E-mail: \"4.1 Template Etapa 3 - Homologação (Treinamento ADM)\"."],
+    templateIds: ["tpl-treinamento-adm"],
+  },
+  {
+    id: "treinamento-usuarios",
+    order: 15,
+    title: "Treinamento de usuários",
+    shortDescription: "Treinamento dos usuários finais.",
+    owner: "consultor",
+    participants: ["cliente"],
+    content: ["Treinamento de usuários.", "E-mail: \"4.2 Template Etapa 3 - Homologação (Formalização do Treinamento usuários)\"."],
+    templateIds: ["tpl-treinamento-usuarios"],
+  },
+  {
+    id: "go-live",
+    order: 16,
+    title: "Go live",
+    shortDescription: "Formalização da entrada em produção do projeto.",
+    owner: "gp",
+    participants: ["consultor", "cliente"],
+    content: ["O go live é formalizado pelo GP, com o e-mail \"5. Template etapa 4 - Go live\"."],
+    templateIds: ["tpl-go-live"],
+  },
+];
+
+export function getLeStage(id: string): Stage | undefined {
+  return leStages.find((s) => s.id === id);
+}
