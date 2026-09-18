@@ -41,11 +41,15 @@ export function fixEncoding(str: string): string {
   return str;
 }
 
-const norm = (value: unknown) => String(value ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
+export const norm = (value: unknown) => String(value ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
 const text = (value: unknown) => fixEncoding(String(value ?? "").trim());
-const digits = (value: unknown) => text(value).replace(/\D/g, "");
+export const digits = (value: unknown) => text(value).replace(/\D/g, "");
 const yesNo = (value: unknown) => { const v = text(value).toUpperCase(); if (!v) return "S"; return v.startsWith("S") ? "S" : v.startsWith("N") ? "N" : v; };
 const compactDocument = (value: unknown, length: number) => { const valueDigits = digits(value); return valueDigits ? valueDigits.padStart(length, "0") : ""; };
+
+export function normalizeSex(value: string): string { const current = value.trim(); const first = current.charAt(0).toUpperCase(); return first === "M" || first === "F" ? first : current; }
+export function normalizeActive(value: string): string { const current = value.trim(); if (!current) return "S"; return current.toUpperCase().startsWith("S") ? "S" : current.toUpperCase().startsWith("N") ? "N" : current; }
+export function validEmail(value: string): boolean { return /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/.test(value); }
 
 export function isValidCnpj(cnpj: string): boolean {
   const doc = digits(cnpj);
@@ -118,6 +122,11 @@ export function parseWorkbook(buffer: ArrayBuffer): Conversion {
   return result;
 }
 
+function companySlug(conversion: Conversion): string {
+  const name = conversion.EMPLOYER[0]?.values[0] ?? "";
+  return name.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+}
+
 export async function exportDefaults(conversion: Conversion, reviewReport?: string) {
   const zip = new JSZip();
   for (const kind of Object.keys(definitions) as Kind[]) {
@@ -128,7 +137,8 @@ export async function exportDefaults(conversion: Conversion, reviewReport?: stri
   }
   if (reviewReport) zip.file("RELATORIO_REVISAO.txt", reviewReport);
   const url = URL.createObjectURL(await zip.generateAsync({ type: "blob", compression: "DEFLATE" }));
-  const anchor = document.createElement("a"); anchor.href = url; anchor.download = "CARGAS_PAYTRACK.zip"; anchor.click(); URL.revokeObjectURL(url);
+  const company = companySlug(conversion);
+  const anchor = document.createElement("a"); anchor.href = url; anchor.download = company ? `CARGAS_PAYTRACK_${company}.zip` : "CARGAS_PAYTRACK.zip"; anchor.click(); URL.revokeObjectURL(url);
 }
 
 const csvCell = (value: unknown) => `"${String(value ?? "").replace(/"/g, '""')}"`;
@@ -180,5 +190,7 @@ export async function exportSynchronizer(conversion: Conversion, hierarchy: Hier
   zip.file("RESUMO_REVISAO.txt", summaryContent);
   if (reviewReport) zip.file("RELATORIO_REVISAO.txt", reviewReport);
   zip.file("LEIA-ME.txt", `Arquivos preparados para o Sincronizador Paytrack.\r\n\r\nEnvie cada CSV diretamente para /sincronizador/<seu_email>/ no Google Drive.\r\nMantenha os nomes exatos: COLABORADORES.csv e HIERARQUIA.csv.\r\nSelecione no Paystore o tipo correspondente a cada arquivo.\r\nConsulte RESUMO_REVISAO.txt para o resumo das pendências e registros exportados.\r\n`);
-  const url = URL.createObjectURL(await zip.generateAsync({ type: "blob", compression: "DEFLATE" })); const anchor = document.createElement("a"); anchor.href = url; anchor.download = "CARGAS_SINCRONIZADOR_PAYTRACK.zip"; anchor.click(); URL.revokeObjectURL(url);
+  const url = URL.createObjectURL(await zip.generateAsync({ type: "blob", compression: "DEFLATE" }));
+  const company = companySlug(conversion);
+  const anchor = document.createElement("a"); anchor.href = url; anchor.download = company ? `CARGAS_SINCRONIZADOR_PAYTRACK_${company}.zip` : "CARGAS_SINCRONIZADOR_PAYTRACK.zip"; anchor.click(); URL.revokeObjectURL(url);
 }
