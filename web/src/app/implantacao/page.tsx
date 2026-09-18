@@ -5,7 +5,7 @@ import { Conversion, digits, exportDefaults, exportHierarchyCsv, exportSynchroni
 import AppHeader from "@/components/AppHeader";
 
 type LoadKey = "EMPLOYER" | "CUST" | "EXPENSES" | "USERS";
-type User = { row: number; name: string; cpf: string; email: string; sexo: string; ativo: string };
+type User = { row: number; name: string; cpf: string; email: string; sexo: string; ativo: string; birthDate: string };
 type EditableUserField = keyof Pick<User, "name" | "cpf" | "email" | "sexo" | "ativo">;
 type UserEditor = { row: number; field: EditableUserField; label: string; value: string };
 type HierarchyEditor = HierarchyNode;
@@ -37,13 +37,14 @@ export default function Implantacao() {
   const [integrationPattern, setIntegrationPattern] = useState("0.{EXTRAFRUTI}.1.{CASAFRUTI}");
   const [emailDomain, setEmailDomain] = useState(""); const sessionInput = useRef<HTMLInputElement>(null);
   const [outputKind, setOutputKind] = useState<LoadKey>("USERS");
-  const users = useMemo<User[]>(() => (conversion?.USERS ?? []).map((record) => ({ row: record.sourceRow, name: record.values[0], sexo: record.values[1], cpf: record.values[2], email: record.values[3], ativo: record.values[6] })), [conversion]);
+  const users = useMemo<User[]>(() => (conversion?.USERS ?? []).map((record) => ({ row: record.sourceRow, name: record.values[0], sexo: record.values[1], cpf: record.values[2], email: record.values[3], birthDate: record.values[4], ativo: record.values[6] })), [conversion]);
   const fixes = useMemo<Fix[]>(() => {
     const userFixes = users.flatMap((user) => {
       const proposal: Fix[] = []; const cpf = digits(user.cpf);
       if (cpf && cpf.length < 11) proposal.push({ id: `${user.row}-cpf`, row: user.row, field: "cpf", before: user.cpf, after: cpf.padStart(11, "0"), reason: "CPF será completado com zeros à esquerda." });
       const sexo = normalizeSex(user.sexo); if (sexo && sexo !== user.sexo) proposal.push({ id: `${user.row}-sexo`, row: user.row, field: "sexo", before: user.sexo, after: sexo, reason: "Sexo será normalizado para M ou F." });
       const ativo = normalizeActive(user.ativo); if (ativo !== user.ativo) proposal.push({ id: `${user.row}-ativo`, row: user.row, field: "ativo", before: user.ativo || "(vazio)", after: ativo, reason: "Ativo será normalizado para S ou N." });
+      const collapsedName = user.name.replace(/\s+/g, " ").trim(); if (collapsedName !== user.name) proposal.push({ id: `${user.row}-name`, row: user.row, field: "name", before: user.name, after: collapsedName, reason: "Espaços extras serão normalizados." });
       return proposal;
     });
     const employerFixes: Fix[] = [];
@@ -78,6 +79,10 @@ export default function Implantacao() {
       else if (!validEmail(user.email)) list.push({ row: user.row, field: "E-mail", reason: "Formato de e-mail inválido.", severity: "Erro" });
       else if (repeated.has(user.email.toLowerCase())) list.push({ row: user.row, field: "E-mail", reason: "E-mail repetido. A sugestão precisa ser confirmada antes de alterar.", severity: "Erro" });
       if (user.sexo && !["M", "F"].includes(normalizeSex(user.sexo))) list.push({ row: user.row, field: "Sexo", reason: "Valor não identificado como M ou F.", severity: "Pendente" });
+      if (user.birthDate) {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(user.birthDate)) list.push({ row: user.row, field: "Nascimento", reason: "Data inválida. Informe DD/MM/AAAA ou deixe o campo opcional vazio.", severity: "Erro" });
+        else if (new Date(user.birthDate) > new Date()) list.push({ row: user.row, field: "Nascimento", reason: "Nascimento no futuro; confirme a data.", severity: "Erro" });
+      }
       return list;
     });
   }, [users]);
@@ -120,7 +125,7 @@ export default function Implantacao() {
       if (!current) return current;
       const next = structuredClone(current);
       fixes.forEach((fix) => {
-        if (fix.field === "cpf" || fix.field === "sexo" || fix.field === "ativo") {
+        if (fix.field === "cpf" || fix.field === "sexo" || fix.field === "ativo" || fix.field === "name") {
           const record = next.USERS.find((r) => r.sourceRow === fix.row);
           if (record) record.values[userFieldIndex[fix.field]] = fix.after;
         } else if (fix.field === "CEP (Unidades)") {
