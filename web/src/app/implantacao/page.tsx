@@ -1,7 +1,7 @@
 "use client";
 
 import { ChangeEvent, useMemo, useRef, useState } from "react";
-import { Conversion, digits, exportDefaults, exportHierarchyCsv, exportSynchronizer, getHierarchyIssues, HierarchyMode, HierarchyNode, isValidCnpj, norm, normalizeActive, normalizeSex, outputHeaders, parseHierarchyWorkbook, parseWorkbook, validEmail } from "@/lib/conversion";
+import { Conversion, digits, exportDefaults, exportHierarchyCsv, exportSynchronizer, getHierarchyIssues, HierarchyMode, HierarchyNode, isValidCnpj, isValidCpf, norm, normalizeActive, normalizeSex, outputHeaders, parseHierarchyWorkbook, parseWorkbook, validEmail } from "@/lib/conversion";
 import AppHeader from "@/components/AppHeader";
 
 type LoadKey = "EMPLOYER" | "CUST" | "EXPENSES" | "USERS";
@@ -72,6 +72,7 @@ export default function Implantacao() {
       if (!user.name) list.push({ row: user.row, field: "Nome", reason: "Campo obrigatório vazio.", severity: "Pendente" });
       if (!cpf) list.push({ row: user.row, field: "CPF", reason: "Campo obrigatório vazio.", severity: "Pendente" });
       else if (cpf.length > 11) list.push({ row: user.row, field: "CPF", reason: "CPF possui mais de 11 dígitos; ele não será cortado.", severity: "Erro" });
+      else if (cpf.length === 11 && !isValidCpf(cpf)) list.push({ row: user.row, field: "CPF", reason: "CPF inválido (dígitos verificadores incorretos). Confirme o documento.", severity: "Erro" });
       else if (repeatedCpf.has(cpf)) list.push({ row: user.row, field: "CPF", reason: "CPF repetido em mais de uma linha. Revise os registros antes de exportar.", severity: "Erro" });
       if (!user.email) list.push({ row: user.row, field: "E-mail", reason: "Campo obrigatório vazio.", severity: "Pendente" });
       else if (!validEmail(user.email)) list.push({ row: user.row, field: "E-mail", reason: "Formato de e-mail inválido.", severity: "Erro" });
