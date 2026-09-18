@@ -118,6 +118,11 @@ export function parseWorkbook(buffer: ArrayBuffer): Conversion {
   return result;
 }
 
+function companySlug(conversion: Conversion): string {
+  const name = conversion.EMPLOYER[0]?.values[0] ?? "";
+  return name.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+}
+
 export async function exportDefaults(conversion: Conversion, reviewReport?: string) {
   const zip = new JSZip();
   for (const kind of Object.keys(definitions) as Kind[]) {
@@ -128,7 +133,8 @@ export async function exportDefaults(conversion: Conversion, reviewReport?: stri
   }
   if (reviewReport) zip.file("RELATORIO_REVISAO.txt", reviewReport);
   const url = URL.createObjectURL(await zip.generateAsync({ type: "blob", compression: "DEFLATE" }));
-  const anchor = document.createElement("a"); anchor.href = url; anchor.download = "CARGAS_PAYTRACK.zip"; anchor.click(); URL.revokeObjectURL(url);
+  const company = companySlug(conversion);
+  const anchor = document.createElement("a"); anchor.href = url; anchor.download = company ? `CARGAS_PAYTRACK_${company}.zip` : "CARGAS_PAYTRACK.zip"; anchor.click(); URL.revokeObjectURL(url);
 }
 
 const csvCell = (value: unknown) => `"${String(value ?? "").replace(/"/g, '""')}"`;
@@ -180,5 +186,7 @@ export async function exportSynchronizer(conversion: Conversion, hierarchy: Hier
   zip.file("RESUMO_REVISAO.txt", summaryContent);
   if (reviewReport) zip.file("RELATORIO_REVISAO.txt", reviewReport);
   zip.file("LEIA-ME.txt", `Arquivos preparados para o Sincronizador Paytrack.\r\n\r\nEnvie cada CSV diretamente para /sincronizador/<seu_email>/ no Google Drive.\r\nMantenha os nomes exatos: COLABORADORES.csv e HIERARQUIA.csv.\r\nSelecione no Paystore o tipo correspondente a cada arquivo.\r\nConsulte RESUMO_REVISAO.txt para o resumo das pendências e registros exportados.\r\n`);
-  const url = URL.createObjectURL(await zip.generateAsync({ type: "blob", compression: "DEFLATE" })); const anchor = document.createElement("a"); anchor.href = url; anchor.download = "CARGAS_SINCRONIZADOR_PAYTRACK.zip"; anchor.click(); URL.revokeObjectURL(url);
+  const url = URL.createObjectURL(await zip.generateAsync({ type: "blob", compression: "DEFLATE" }));
+  const company = companySlug(conversion);
+  const anchor = document.createElement("a"); anchor.href = url; anchor.download = company ? `CARGAS_SINCRONIZADOR_PAYTRACK_${company}.zip` : "CARGAS_SINCRONIZADOR_PAYTRACK.zip"; anchor.click(); URL.revokeObjectURL(url);
 }
