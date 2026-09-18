@@ -41,11 +41,15 @@ export function fixEncoding(str: string): string {
   return str;
 }
 
-const norm = (value: unknown) => String(value ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
+export const norm = (value: unknown) => String(value ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
 const text = (value: unknown) => fixEncoding(String(value ?? "").trim());
-const digits = (value: unknown) => text(value).replace(/\D/g, "");
+export const digits = (value: unknown) => text(value).replace(/\D/g, "");
 const yesNo = (value: unknown) => { const v = text(value).toUpperCase(); if (!v) return "S"; return v.startsWith("S") ? "S" : v.startsWith("N") ? "N" : v; };
 const compactDocument = (value: unknown, length: number) => { const valueDigits = digits(value); return valueDigits ? valueDigits.padStart(length, "0") : ""; };
+
+export function normalizeSex(value: string): string { const current = value.trim(); const first = current.charAt(0).toUpperCase(); return first === "M" || first === "F" ? first : current; }
+export function normalizeActive(value: string): string { const current = value.trim(); if (!current) return "S"; return current.toUpperCase().startsWith("S") ? "S" : current.toUpperCase().startsWith("N") ? "N" : current; }
+export function validEmail(value: string): boolean { return /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/.test(value); }
 
 export function isValidCnpj(cnpj: string): boolean {
   const doc = digits(cnpj);

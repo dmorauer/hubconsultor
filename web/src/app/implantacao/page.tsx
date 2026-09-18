@@ -1,8 +1,7 @@
 "use client";
 
 import { ChangeEvent, useMemo, useRef, useState } from "react";
-import * as XLSX from "xlsx";
-import { Conversion, exportDefaults, exportHierarchyCsv, exportSynchronizer, getHierarchyIssues, HierarchyMode, HierarchyNode, isValidCnpj, outputHeaders, parseHierarchyWorkbook, parseWorkbook } from "@/lib/conversion";
+import { Conversion, digits, exportDefaults, exportHierarchyCsv, exportSynchronizer, getHierarchyIssues, HierarchyMode, HierarchyNode, isValidCnpj, norm, normalizeActive, normalizeSex, outputHeaders, parseHierarchyWorkbook, parseWorkbook, validEmail } from "@/lib/conversion";
 import AppHeader from "@/components/AppHeader";
 
 type LoadKey = "EMPLOYER" | "CUST" | "EXPENSES" | "USERS";
@@ -12,7 +11,7 @@ type UserEditor = { row: number; field: EditableUserField; label: string; value:
 type HierarchyEditor = HierarchyNode;
 type Fix = { id: string; row: number; field: string; before: string; after: string; reason: string };
 type Issue = { row: number; field: string; reason: string; severity: "Erro" | "Pendente"; kind?: LoadKey };
-type History = { before: User[]; label: string };
+type History = { before: Conversion; label: string };
 type ExportMode = "DIRECT" | "SYNCHRONIZER";
 type HierarchyDisplayRow = { kind: "root"; root: string } | { kind: "node"; node: HierarchyNode; level: number; parentInFile: boolean };
 
@@ -23,18 +22,11 @@ const loads: Record<LoadKey, { label: string; aliases: string[] }> = {
   USERS: { label: "Usuários", aliases: ["colaboradores", "usuarios"] },
 };
 const hierarchyFields: { key: Exclude<keyof HierarchyNode, "sourceRow">; label: string }[] = [{ key: "root", label: "Identificador raiz" }, { key: "parent", label: "Identificador pai" }, { key: "parentDescription", label: "Descrição do pai" }, { key: "id", label: "Identificador" }, { key: "description", label: "Descrição" }, { key: "active", label: "Ativo" }, { key: "company", label: "Empresa" }, { key: "allowanceId", label: "Identificador de alçada" }, { key: "travelerCpf", label: "CPF do colaborador" }, { key: "approverCpf", label: "CPF do aprovador" }];
-const norm = (value: unknown) => String(value ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
-const digits = (value: unknown) => String(value ?? "").replace(/\D/g, "");
-const find = (headers: unknown[], label: string) => headers.findIndex((header) => norm(header).includes(norm(label)));
-const valueAt = (row: unknown[], index: number) => index < 0 ? "" : String(row[index] ?? "").trim();
-
-function normalizeSex(value: string) { const current = value.trim(); const first = current.charAt(0).toUpperCase(); return first === "M" || first === "F" ? first : current; }
-function normalizeActive(value: string) { const current = value.trim(); if (!current) return "S"; return current.toUpperCase().startsWith("S") ? "S" : current.toUpperCase().startsWith("N") ? "N" : current; }
-function validEmail(value: string) { return /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/.test(value); }
+const userFieldIndex: Record<EditableUserField, number> = { name: 0, sexo: 1, cpf: 2, email: 3, ativo: 6 };
 
 export default function Implantacao() {
   const [fileName, setFileName] = useState(""); const [loadRows, setLoadRows] = useState<Record<LoadKey, number>>({ EMPLOYER: 0, CUST: 0, EXPENSES: 0, USERS: 0 });
-  const [users, setUsers] = useState<User[]>([]); const [history, setHistory] = useState<History[]>([]); const [error, setError] = useState(""); const [analyzing, setAnalyzing] = useState(false);
+  const [history, setHistory] = useState<History[]>([]); const [error, setError] = useState(""); const [analyzing, setAnalyzing] = useState(false);
   const [editor, setEditor] = useState<UserEditor | null>(null);
   const [hierarchyEditor, setHierarchyEditor] = useState<HierarchyEditor | null>(null); const [hierarchyHistory, setHierarchyHistory] = useState<HierarchyNode[][]>([]);
   const [conversion, setConversion] = useState<Conversion | null>(null); const [exporting, setExporting] = useState(false);
@@ -45,6 +37,7 @@ export default function Implantacao() {
   const [integrationPattern, setIntegrationPattern] = useState("0.{EXTRAFRUTI}.1.{CASAFRUTI}");
   const [emailDomain, setEmailDomain] = useState(""); const sessionInput = useRef<HTMLInputElement>(null);
   const [outputKind, setOutputKind] = useState<LoadKey>("USERS");
+  const users = useMemo<User[]>(() => (conversion?.USERS ?? []).map((record) => ({ row: record.sourceRow, name: record.values[0], sexo: record.values[1], cpf: record.values[2], email: record.values[3], ativo: record.values[6] })), [conversion]);
   const fixes = useMemo<Fix[]>(() => {
     const userFixes = users.flatMap((user) => {
       const proposal: Fix[] = []; const cpf = digits(user.cpf);
@@ -100,15 +93,11 @@ export default function Implantacao() {
     const file = event.target.files?.[0]; if (!file) return;
     setError(""); setAnalyzing(true); setFileName(file.name);
     try {
-      const buffer = await file.arrayBuffer(); const workbook = XLSX.read(buffer, { type: "array" }); const nextConversion = parseWorkbook(buffer); const counts = { EMPLOYER: nextConversion.EMPLOYER.length, CUST: nextConversion.CUST.length, EXPENSES: nextConversion.EXPENSES.length, USERS: nextConversion.USERS.length };
-      const userSheet = workbook.SheetNames.find((name) => loads.USERS.aliases.includes(norm(name))); if (!userSheet) throw new Error("Aba de Colaboradores não encontrada.");
-      const rows = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets[userSheet], { header: 1, defval: "" }); const [headers = [], ...data] = rows;
-      const indexes = { name: find(headers, "Nome"), cpf: find(headers, "CPF"), email: find(headers, "E-mail"), sexo: find(headers, "Sexo"), ativo: find(headers, "Ativo") };
-      if (indexes.name < 0 || indexes.cpf < 0 || indexes.email < 0) throw new Error("Aba de Colaboradores sem os cabeçalhos Nome, CPF e E-mail.");
-      const parsedUsers = data.filter((row) => row.some((cell) => String(cell).trim())).map((row, index) => ({ row: index + 2, name: valueAt(row, indexes.name), cpf: valueAt(row, indexes.cpf), email: valueAt(row, indexes.email), sexo: valueAt(row, indexes.sexo), ativo: valueAt(row, indexes.ativo) }));
-      if (parsedUsers.length === 0) throw new Error("A planilha foi lida, mas a aba Colaboradores não tem nenhum registro preenchido. Confirme se este é o arquivo correto antes de continuar.");
-      setLoadRows(counts); setConversion(nextConversion); setUsers(parsedUsers); setHistory([]);
-    } catch (caught) { setUsers([]); setError(caught instanceof Error ? caught.message : "Não foi possível ler esta planilha."); }
+      const buffer = await file.arrayBuffer(); const nextConversion = parseWorkbook(buffer);
+      if (nextConversion.USERS.length === 0) throw new Error("A planilha foi lida, mas a aba Colaboradores não tem nenhum registro preenchido. Confirme se este é o arquivo correto antes de continuar.");
+      setLoadRows({ EMPLOYER: nextConversion.EMPLOYER.length, CUST: nextConversion.CUST.length, EXPENSES: nextConversion.EXPENSES.length, USERS: nextConversion.USERS.length });
+      setConversion(nextConversion); setHistory([]);
+    } catch (caught) { setConversion(null); setError(caught instanceof Error ? caught.message : "Não foi possível ler esta planilha."); }
     finally { setAnalyzing(false); }
   }
   async function analyzeHierarchy(event: ChangeEvent<HTMLInputElement>) {
@@ -124,38 +113,65 @@ export default function Implantacao() {
     finally { setHierarchyLoading(false); }
   }
   function applyFixes() {
-    if (!fixes.length || !window.confirm(`Aplicar ${fixes.length} correção(ões) propostas?`)) return;
-    setHistory((current) => [...current, { before: users, label: `${fixes.length} correção(ões) em lote` }]);
-    setUsers((current) => current.map((user) => fixes.filter((fix) => fix.row === user.row && fix.field in user).reduce((next, fix) => ({ ...next, [fix.field]: fix.after }), user)));
-    if (conversion) {
-      setConversion((current) => {
-        if (!current) return current;
-        const next = structuredClone(current);
-        fixes.forEach((fix) => {
-          if (fix.field === "CEP (Unidades)") {
-            const record = next.EMPLOYER.find((r) => r.sourceRow === fix.row);
-            if (record) record.values[13] = fix.after;
-          } else if (fix.field === "Telefone (Unidades)") {
-            const record = next.EMPLOYER.find((r) => r.sourceRow === fix.row);
-            if (record) record.values[3] = fix.after;
-          }
-        });
-        return next;
+    if (!fixes.length || !conversion || !window.confirm(`Aplicar ${fixes.length} correção(ões) propostas?`)) return;
+    setHistory((current) => [...current, { before: conversion, label: `${fixes.length} correção(ões) em lote` }]);
+    setConversion((current) => {
+      if (!current) return current;
+      const next = structuredClone(current);
+      fixes.forEach((fix) => {
+        if (fix.field === "cpf" || fix.field === "sexo" || fix.field === "ativo") {
+          const record = next.USERS.find((r) => r.sourceRow === fix.row);
+          if (record) record.values[userFieldIndex[fix.field]] = fix.after;
+        } else if (fix.field === "CEP (Unidades)") {
+          const record = next.EMPLOYER.find((r) => r.sourceRow === fix.row);
+          if (record) record.values[13] = fix.after;
+        } else if (fix.field === "Telefone (Unidades)") {
+          const record = next.EMPLOYER.find((r) => r.sourceRow === fix.row);
+          if (record) record.values[3] = fix.after;
+        }
       });
-    }
+      return next;
+    });
   }
-  function undo() { const last = history.at(-1); if (!last) return; setUsers(last.before); setHistory((current) => current.slice(0, -1)); }
+  function undo() { const last = history.at(-1); if (!last) return; setConversion(last.before); setHistory((current) => current.slice(0, -1)); }
   function openEditor(issue: Issue) { const fieldMap: Record<string, { field: EditableUserField; label: string }> = { Nome: { field: "name", label: "Nome completo" }, CPF: { field: "cpf", label: "CPF" }, "E-mail": { field: "email", label: "E-mail" }, Sexo: { field: "sexo", label: "Sexo" } }; const target = !issue.kind ? fieldMap[issue.field] : undefined; const user = users.find((item) => item.row === issue.row); if (!target || !user) return; setEditor({ row: user.row, field: target.field, label: target.label, value: user[target.field] }); }
-  function applyEditor() { if (!editor) return; const nextValue = editor.value.trim(); const current = users.find((user) => user.row === editor.row); if (!current || current[editor.field] === nextValue) { setEditor(null); return; } setHistory((items) => [...items, { before: users, label: `${editor.label} ajustado na linha ${editor.row}` }]); setUsers((items) => items.map((user) => user.row === editor.row ? { ...user, [editor.field]: nextValue } : user)); setEditor(null); }
+  function applyEditor() {
+    if (!editor || !conversion) return;
+    const nextValue = editor.value.trim();
+    const record = conversion.USERS.find((r) => r.sourceRow === editor.row);
+    const index = userFieldIndex[editor.field];
+    if (!record || record.values[index] === nextValue) { setEditor(null); return; }
+    setHistory((items) => [...items, { before: conversion, label: `${editor.label} ajustado na linha ${editor.row}` }]);
+    setConversion((current) => {
+      if (!current) return current;
+      const next = structuredClone(current);
+      const target = next.USERS.find((r) => r.sourceRow === editor.row);
+      if (target) target.values[index] = nextValue;
+      return next;
+    });
+    setEditor(null);
+  }
   function applyHierarchyEditor() { if (!hierarchyEditor) return; const current = hierarchy.find((node) => node.sourceRow === hierarchyEditor.sourceRow); if (!current || JSON.stringify(current) === JSON.stringify(hierarchyEditor)) { setHierarchyEditor(null); return; } setHierarchyHistory((items) => [...items, hierarchy]); setHierarchy((items) => items.map((node) => node.sourceRow === hierarchyEditor.sourceRow ? hierarchyEditor : node)); setHierarchyEditor(null); }
   function undoHierarchy() { const last = hierarchyHistory.at(-1); if (!last) return; setHierarchy(last); setHierarchyHistory((items) => items.slice(0, -1)); }
-  function applyEmails() { if (!emailProposals.length || !window.confirm(`Aplicar ${emailProposals.length} sugestão(ões) de e-mail?`)) return; setHistory((current) => [...current, { before: users, label: `${emailProposals.length} sugestão(ões) de e-mail` }]); setUsers((current) => current.map((user) => ({ ...user, email: emailProposals.find((item) => item.row === user.row)?.after ?? user.email }))); }
+  function applyEmails() {
+    if (!emailProposals.length || !conversion || !window.confirm(`Aplicar ${emailProposals.length} sugestão(ões) de e-mail?`)) return;
+    setHistory((current) => [...current, { before: conversion, label: `${emailProposals.length} sugestão(ões) de e-mail` }]);
+    setConversion((current) => {
+      if (!current) return current;
+      const next = structuredClone(current);
+      emailProposals.forEach((proposal) => {
+        const record = next.USERS.find((r) => r.sourceRow === proposal.row);
+        if (record) record.values[3] = proposal.after;
+      });
+      return next;
+    });
+  }
   function buildReviewReport() { const pending = [...issues, ...crossIssues, ...loadIssues]; const lines = ["RELATÓRIO DE REVISÃO — VALIDADOR DE CARGAS", "", `Gerado em: ${new Date().toLocaleString("pt-BR")}`, `Arquivo principal: ${fileName || "Não carregado"}`, `Destino: ${exportMode === "DIRECT" ? "Importação direta Paytrack" : "Sincronizador via CSV"}`, "", "REGISTROS", ...((Object.keys(loadRows) as LoadKey[]).map((key) => `- ${loads[key].label}: ${loadRows[key]}`)), `- Hierarquia: ${hierarchy.length}`, "", "PENDÊNCIAS", `- Cargas principais: ${pending.length}`, `- Hierarquia: ${hierarchyIssues.length}`, "", "DECISÕES APLICADAS", ...(history.length ? history.map((item) => `- ${item.label}`) : ["- Nenhuma decisão manual aplicada."]), "", "OBSERVAÇÃO", "Este relatório não contém senhas nem valores de campos sensíveis."]; return lines.join("\r\n"); }
-  function saveSession() { if (!conversion) return; const review = structuredClone(conversion); review.USERS.forEach((record) => { record.values[8] = ""; Object.keys(record.source).forEach((header) => { if (norm(header).includes("senha")) record.source[header] = ""; }); }); const payload = JSON.stringify({ version: 1, fileName, loadRows, users, conversion: review, integrationPattern, emailDomain }); const anchor = document.createElement("a"); anchor.href = URL.createObjectURL(new Blob([payload], { type: "application/json" })); anchor.download = "revisao-sheetanalyser.json"; anchor.click(); URL.revokeObjectURL(anchor.href); }
-  async function openSession(event: ChangeEvent<HTMLInputElement>) { const file = event.target.files?.[0]; if (!file) return; try { const saved = JSON.parse(await file.text()); if (saved.version !== 1 || !saved.conversion || !Array.isArray(saved.users)) throw new Error("Arquivo de revisão inválido."); setFileName(saved.fileName ?? "Revisão carregada"); setLoadRows(saved.loadRows); setUsers(saved.users); setConversion(saved.conversion); setIntegrationPattern(saved.integrationPattern ?? integrationPattern); setEmailDomain(saved.emailDomain ?? ""); setHistory([]); setError(""); } catch (caught) { setError(caught instanceof Error ? caught.message : "Não foi possível abrir a revisão."); } }
+  function saveSession() { if (!conversion) return; const review = structuredClone(conversion); review.USERS.forEach((record) => { record.values[8] = ""; Object.keys(record.source).forEach((header) => { if (norm(header).includes("senha")) record.source[header] = ""; }); }); const payload = JSON.stringify({ version: 1, fileName, loadRows, conversion: review, integrationPattern, emailDomain }); const anchor = document.createElement("a"); anchor.href = URL.createObjectURL(new Blob([payload], { type: "application/json" })); anchor.download = "revisao-sheetanalyser.json"; anchor.click(); URL.revokeObjectURL(anchor.href); }
+  async function openSession(event: ChangeEvent<HTMLInputElement>) { const file = event.target.files?.[0]; if (!file) return; try { const saved = JSON.parse(await file.text()); if (saved.version !== 1 || !saved.conversion) throw new Error("Arquivo de revisão inválido."); setFileName(saved.fileName ?? "Revisão carregada"); setLoadRows(saved.loadRows); setConversion(saved.conversion); setIntegrationPattern(saved.integrationPattern ?? integrationPattern); setEmailDomain(saved.emailDomain ?? ""); setHistory([]); setError(""); } catch (caught) { setError(caught instanceof Error ? caught.message : "Não foi possível abrir a revisão."); } }
   const integrationRows = useMemo(() => (conversion?.USERS ?? []).flatMap((record) => { const sourceValue = (label: string) => Object.entries(record.source).find(([header]) => norm(header) === norm(label))?.[1] ?? ""; const extra = sourceValue("Código de integração Extrafruti"); const casa = sourceValue("Código de integração Casafruti"); if (!extra && !casa) return []; return [{ row: record.sourceRow, extra, casa, current: record.values[5], proposal: integrationPattern.replace("{EXTRAFRUTI}", extra).replace("{CASAFRUTI}", casa) }]; }), [conversion, integrationPattern]);
   function applyIntegrations() { if (!conversion || !integrationRows.length || !integrationPattern.includes("{")) return; if (!window.confirm(`Aplicar ${integrationRows.length} código(s) de integração com este formato?`)) return; setConversion((current) => { if (!current) return current; const next = structuredClone(current); integrationRows.forEach((proposal) => { const record = next.USERS.find((item) => item.sourceRow === proposal.row); if (record) record.values[5] = proposal.proposal; }); return next; }); }
-  async function exportFiles() { if (!conversion || exporting) return; if (exportMode === "SYNCHRONIZER" && hierarchy.length && hierarchyIssues.some((issue) => issue.severity === "Erro")) { setError("Corrija as pendências de hierarquia antes de exportar para o Sincronizador."); return; } setExporting(true); try { const adjusted = structuredClone(conversion); adjusted.USERS.forEach((record) => { const user = users.find((item) => item.row === record.sourceRow); if (user) { record.values[1] = user.sexo; record.values[2] = user.cpf; record.values[3] = user.email; record.values[6] = user.ativo; } }); const report = buildReviewReport(); if (exportMode === "SYNCHRONIZER") await exportSynchronizer(adjusted, hierarchy, hierarchyMode, report); else await exportDefaults(adjusted, report); } catch (caught) { setError(caught instanceof Error ? caught.message : "Não foi possível exportar as cargas."); } finally { setExporting(false); } }
+  async function exportFiles() { if (!conversion || exporting) return; if (exportMode === "SYNCHRONIZER" && hierarchy.length && hierarchyIssues.some((issue) => issue.severity === "Erro")) { setError("Corrija as pendências de hierarquia antes de exportar para o Sincronizador."); return; } setExporting(true); try { const report = buildReviewReport(); if (exportMode === "SYNCHRONIZER") await exportSynchronizer(conversion, hierarchy, hierarchyMode, report); else await exportDefaults(conversion, report); } catch (caught) { setError(caught instanceof Error ? caught.message : "Não foi possível exportar as cargas."); } finally { setExporting(false); } }
   function exportHierarchyOnly() { if (!hierarchy.length || exporting) return; if (hierarchyIssues.some((issue) => issue.severity === "Erro")) { setError("Corrija as pendências de hierarquia antes de gerar o CSV."); return; } setExporting(true); try { exportHierarchyCsv(hierarchy, hierarchyMode); setError(""); } finally { setExporting(false); } }
   const ready = Object.values(loadRows).filter(Boolean).length - Object.values(loadRows).filter((count) => count && (issues.length > 0)).length;
   const outputPreview = conversion?.[outputKind].slice(0, 25) ?? [];
