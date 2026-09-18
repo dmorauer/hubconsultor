@@ -67,6 +67,37 @@ export function isValidCnpj(cnpj: string): boolean {
   return parseInt(doc[13], 10) === d2;
 }
 
+export function isValidCpf(cpf: string): boolean {
+  const doc = digits(cpf);
+  if (doc.length !== 11) return false;
+  if (/^(\d)\1{10}$/.test(doc)) return false;
+  const s1 = doc.slice(0, 9).split("").reduce((acc, digit, idx) => acc + parseInt(digit, 10) * (10 - idx), 0);
+  let d1 = 11 - (s1 % 11);
+  if (d1 >= 10) d1 = 0;
+  if (parseInt(doc[9], 10) !== d1) return false;
+  const s2 = doc.slice(0, 10).split("").reduce((acc, digit, idx) => acc + parseInt(digit, 10) * (11 - idx), 0);
+  let d2 = 11 - (s2 % 11);
+  if (d2 >= 10) d2 = 0;
+  return parseInt(doc[10], 10) === d2;
+}
+
+// Empresa(CNPJ) reference on CUST/USERS: only left-pad when the raw value looks like a
+// (possibly formatted) document — an integration code in this field is left untouched.
+function companyReference(value: string): string {
+  return /^[0-9.\-/\s]+$/.test(value) && digits(value) ? compactDocument(value, 14) : value;
+}
+
+export function country(value: string): string {
+  return value.toUpperCase() === "BRASIL" ? "BRA" : value.toUpperCase();
+}
+
+// Pads a CEP to 8 digits only when, after stripping punctuation, it's purely digits and not
+// longer than 8 — a malformed value (letters, extra digits) is left untouched for review.
+function cep(value: string): string {
+  const stripped = value.replace(/[.\-/\s]/g, "");
+  return /^\d{1,8}$/.test(stripped) ? stripped.padStart(8, "0") : value;
+}
+
 function value(headers: unknown[], row: unknown[], label: string) {
   const index = headers.findIndex((header) => norm(header) === norm(label));
   return index < 0 ? "" : text(row[index]);
@@ -112,10 +143,10 @@ export function parseWorkbook(buffer: ArrayBuffer): Conversion {
       const source = Object.fromEntries(headers.map((header, column) => [text(header), text(row[column])]));
       if (kind === "EXPENSES" && text(row[0]).toUpperCase().startsWith("OBS.:")) return [];
       let values: string[];
-      if (kind === "EMPLOYER") values = [value(headers,row,"Nome"), compactDocument(value(headers,row,"CNPJ"),14), value(headers,row,"Nome para contato"), value(headers,row,"Telefone"), value(headers,row,"E-mail"), value(headers,row,"Moeda (BRL, EUR, USD)"), value(headers,row,"Código de integração"), "", "", "", "", "", "", digits(value(headers,row,"CEP")), value(headers,row,"Logradouro"), value(headers,row,"Número"), value(headers,row,"Bairro"), value(headers,row,"Cidade"), value(headers,row,"Estado"), value(headers,row,"País")];
-      else if (kind === "CUST") values = ["", value(headers,row,"Código Centro de custo"), value(headers,row,"Nome centro de Custo"), "", value(headers,row,"Empresa(CNPJ)")];
+      if (kind === "EMPLOYER") values = [value(headers,row,"Nome"), compactDocument(value(headers,row,"CNPJ"),14), value(headers,row,"Nome para contato"), value(headers,row,"Telefone"), value(headers,row,"E-mail"), value(headers,row,"Moeda (BRL, EUR, USD)"), value(headers,row,"Código de integração"), "", "", "", "", "", "", cep(value(headers,row,"CEP")), value(headers,row,"Logradouro"), value(headers,row,"Número"), value(headers,row,"Bairro"), value(headers,row,"Cidade"), value(headers,row,"Estado"), country(value(headers,row,"País"))];
+      else if (kind === "CUST") values = ["", value(headers,row,"Código Centro de custo"), value(headers,row,"Nome centro de Custo"), "", companyReference(value(headers,row,"Empresa(CNPJ)"))];
       else if (kind === "EXPENSES") values = ["", value(headers,row,"Nome da Despesa"), "", "", "", value(headers,row,"Item de Orçamento"), "", "", "", "", "", "", "", "", "", ""];
-      else { const email = value(headers,row,"E-mail"); const username = value(headers,row,"Usuário") || email; values = [value(headers,row,"Nome completo"), value(headers,row,"Sexo (M ou F)"), compactDocument(value(headers,row,"CPF"),11), email, value(headers,row,"Data de nascimento"), value(headers,row,"Código de integração"), yesNo(value(headers,row,"Ativo (S ou N)")), username, value(headers,row,"Senha"), value(headers,row,"Empresa (CNPJ)"), value(headers,row,"Centro de custo (Cód. no ERP)"), value(headers,row,"Descrição centro de custo"), "", ""]; }
+      else { const email = value(headers,row,"E-mail"); const username = value(headers,row,"Usuário") || email; values = [value(headers,row,"Nome completo"), value(headers,row,"Sexo (M ou F)"), compactDocument(value(headers,row,"CPF"),11), email, value(headers,row,"Data de nascimento"), value(headers,row,"Código de integração"), yesNo(value(headers,row,"Ativo (S ou N)")), username, value(headers,row,"Senha"), companyReference(value(headers,row,"Empresa (CNPJ)")), value(headers,row,"Centro de custo (Cód. no ERP)"), value(headers,row,"Descrição centro de custo"), "", ""]; }
       return [{ sourceRow: index + 2, values, source }];
     });
   });
