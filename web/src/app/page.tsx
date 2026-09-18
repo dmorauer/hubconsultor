@@ -7,6 +7,11 @@ const menu = [
     title: "Implantação",
     description: "Validador de cargas: analise planilhas de clientes, revise sugestões e exporte para o Paytrack ou para o Sincronizador.",
   },
+  {
+    href: "/processos",
+    title: "🚀 Central de Implantação",
+    description: "Portal interativo do processo de implantação (Small & Medium e Large Enterprise): etapas, responsáveis, checklists, módulos e templates.",
+  },
 ];
 
 export default function Home() {
