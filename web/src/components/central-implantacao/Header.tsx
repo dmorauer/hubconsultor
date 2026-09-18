@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { smStages } from "@/data/sm-process";
+import { leStages } from "@/data/le-process";
 import { modules } from "@/data/modules";
 import { templates } from "@/data/templates";
 
@@ -10,6 +11,7 @@ type SearchItem = { label: string; group: string; href: string };
 
 const searchIndex: SearchItem[] = [
   ...smStages.map((stage) => ({ label: stage.title, group: "Etapa · Small & Medium", href: `/processos/sm/${stage.id}` })),
+  ...leStages.map((stage) => ({ label: stage.title, group: "Etapa · Large Enterprise", href: `/processos/le/${stage.id}` })),
   ...modules.map((mod) => ({ label: mod.title, group: "Módulo", href: `/processos/modulos/${mod.id}` })),
   ...templates.map((tpl) => ({ label: tpl.title, group: "Template de e-mail", href: "/processos/templates" })),
 ];
@@ -44,7 +46,7 @@ export default function Header() {
           </div>
         )}
       </div>
-      <div className="ci-avatar" title="Minha conta">👤</div>
+      <div className="ci-avatar" title="Minha conta" aria-label="Minha conta" />
     </header>
   );
 }

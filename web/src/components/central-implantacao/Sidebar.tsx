@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { smStages } from "@/data/sm-process";
+import { leStages } from "@/data/le-process";
 
 const modules = [
   { id: "expense", title: "Expense" },
@@ -13,13 +14,14 @@ const modules = [
   { id: "integracoes", title: "Integrações" },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ isOwner }: { isOwner: boolean }) {
   const pathname = usePathname();
   const segment: "sm" | "le" | null = pathname.startsWith("/processos/sm") ? "sm" : pathname.startsWith("/processos/le") ? "le" : null;
 
   return (
     <aside className="ci-sidebar">
-      <div className="ci-brand">🚀 Central de Implantação</div>
+      <div className="ci-brand">Central de Implantação</div>
+      <Link href="/" className="ci-nav-link">← Início do portal</Link>
       <Link href="/processos" className={`ci-nav-link ${pathname === "/processos" ? "active" : ""}`}>Visão geral</Link>
 
       <div className="ci-nav-label">Processos</div>
@@ -36,6 +38,16 @@ export default function Sidebar() {
           ))}
         </>
       )}
+      {segment === "le" && (
+        <>
+          <div className="ci-nav-label">Etapas</div>
+          {leStages.map((stage) => (
+            <Link key={stage.id} href={`/processos/le/${stage.id}`} className={`ci-nav-link ${pathname === `/processos/le/${stage.id}` ? "active" : ""}`}>
+              {stage.order}. {stage.title}
+            </Link>
+          ))}
+        </>
+      )}
 
       <div className="ci-nav-label">Módulos</div>
       {modules.map((mod) => (
@@ -45,6 +57,13 @@ export default function Sidebar() {
       <div className="ci-nav-label">Recursos</div>
       <Link href="/processos/templates" className={`ci-nav-link ${pathname === "/processos/templates" ? "active" : ""}`}>Templates de e-mail</Link>
       <Link href="/processos/boas-praticas" className={`ci-nav-link ${pathname === "/processos/boas-praticas" ? "active" : ""}`}>Boas práticas</Link>
+
+      {isOwner && (
+        <>
+          <div className="ci-nav-label">Administração</div>
+          <Link href="/processos/admin" className={`ci-nav-link ${pathname.startsWith("/processos/admin") ? "active" : ""}`}>Gerenciar conteúdo</Link>
+        </>
+      )}
     </aside>
   );
 }

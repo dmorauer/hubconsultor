@@ -9,7 +9,7 @@ const menu = [
   },
   {
     href: "/processos",
-    title: "🚀 Central de Implantação",
+    title: "Central de Implantação",
     description: "Portal interativo do processo de implantação (Small & Medium e Large Enterprise): etapas, responsáveis, checklists, módulos e templates.",
   },
 ];

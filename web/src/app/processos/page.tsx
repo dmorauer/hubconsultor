@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { smStages } from "@/data/sm-process";
+import { leStages } from "@/data/le-process";
 import { templates } from "@/data/templates";
 
 export default function CentralImplantacao() {
@@ -14,17 +15,18 @@ export default function CentralImplantacao() {
           <p>Implantações conduzidas pelo consultor, do recebimento ao go live. {smStages.length} etapas mapeadas.</p>
           <span className="ci-owner-badge ci-owner-consultor">Acessar processo →</span>
         </Link>
-        <div className="ci-segment-card disabled">
+        <Link href="/processos/le" className="ci-segment-card">
           <h2>Large Enterprise</h2>
-          <p>Implantações com atuação conjunta entre Gerente de Projetos e Consultor.</p>
-          <span className="ci-owner-badge ci-owner-gp">Em construção</span>
-        </div>
+          <p>Implantações com atuação conjunta entre Gerente de Projetos e Consultor. {leStages.length} etapas mapeadas.</p>
+          <span className="ci-owner-badge ci-owner-gp">Acessar processo →</span>
+        </Link>
       </div>
 
       <div className="ci-card">
         <h2>Atalhos</h2>
         <ul>
           <li><Link href="/processos/sm/recebimento">Como recebo meus projetos? (SM)</Link></li>
+          <li><Link href="/processos/le/recebimento">Como recebo meus projetos? (LE)</Link></li>
           <li><Link href="/processos/templates">Templates de e-mail ({templates.length})</Link></li>
           <li><Link href="/processos/boas-praticas">Boas práticas no atendimento</Link></li>
         </ul>
