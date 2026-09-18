@@ -834,6 +834,8 @@ def main():
     parser.add_argument('--templates', type=Path, default=resource_dir() / 'templates')
     parser.add_argument('--result', type=Path, help='Salvar resumo da verificação em JSON')
     parser.add_argument('--export-draft', type=Path, help='Exportar rascunho com --check')
+    parser.add_argument('--sync-supabase', action='store_true', help='Sincronizar cargas com Supabase')
+    parser.add_argument('--supabase-key', type=str, help='Chave da API Supabase')
     args = parser.parse_args()
     if args.check:
         project = Project(args.check, args.templates)
@@ -841,6 +843,12 @@ def main():
         summary = {'counts': {k: len(v) for k, v in a.records.items()}, 'pending': len(a.blocking), 'email_suggestions': len(a.suggestions)}
         if args.export_draft:
             summary['export'] = str(project.export(args.export_draft, draft=True))
+        if args.sync_supabase:
+            try:
+                res = project.sync_supabase(key=args.supabase_key)
+                summary['supabase_sync'] = 'sucesso'
+            except Exception as exc:
+                summary['supabase_sync_error'] = str(exc)
         if args.result:
             args.result.write_text(json.dumps(summary, indent=2), encoding='utf8')
         elif sys.stdout:

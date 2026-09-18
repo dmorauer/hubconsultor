@@ -16,8 +16,46 @@ from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
 import xml.etree.ElementTree as ET
 
+import os
 import openpyxl
 from openpyxl.styles import Alignment, Font, PatternFill
+
+try:
+    from supabase import create_client, Client
+except ImportError:
+    Client = None
+    create_client = None
+
+DEFAULT_SUPABASE_URL = "https://scvagexxpryccgdfmemd.supabase.co"
+
+def init_supabase_client(url: str | None = None, key: str | None = None):
+    """Initialize and return a Supabase Client instance."""
+    if create_client is None:
+        raise ImportError("The 'supabase' package is required. Install it using pip install supabase.")
+    target_url = url or os.environ.get("SUPABASE_URL") or DEFAULT_SUPABASE_URL
+    target_key = key or os.environ.get("SUPABASE_KEY") or os.environ.get("SUPABASE_PUBLISHABLE_KEY")
+    if not target_key:
+        raise ValueError("Supabase API key is required. Pass key or set SUPABASE_KEY / SUPABASE_PUBLISHABLE_KEY environment variable.")
+    return create_client(target_url, target_key)
+
+def sync_to_supabase(client, records_by_kind: dict, table_prefix: str = "paytrack_"):
+    """Sync validated project records by kind to corresponding Supabase tables."""
+    results = {}
+    for kind, records in records_by_kind.items():
+        table_name = f"{table_prefix}{kind.lower()}"
+        payload = []
+        for r in records:
+            item = {"row_number": r.row}
+            for idx, val in enumerate(r.values):
+                val_str = val.strftime('%Y-%m-%d') if isinstance(val, (datetime, date)) else str(val) if val is not None else ""
+                item[f"col_{idx}"] = val_str
+            payload.append(item)
+        if payload:
+            response = client.table(table_name).upsert(payload).execute()
+            results[kind] = response.data
+        else:
+            results[kind] = []
+    return results
 
 KINDS = ('EMPLOYER', 'CUST', 'EXPENSES', 'USERS')
 SHEETS = {'EMPLOYER': 'Empresas', 'CUST': 'Centros de Custo',
@@ -927,6 +965,11 @@ class Project:
             self.decisions, self.history = decisions, history
             raise
         return len(preview)
+
+    def sync_supabase(self, url: str | None = None, key: str | None = None, table_prefix: str = "paytrack_"):
+        """Sync effective records directly to Supabase."""
+        client = init_supabase_client(url=url, key=key)
+        return sync_to_supabase(client, self.effective(), table_prefix=table_prefix)
 
     def save_session(self, path):
         if Path(path).resolve() in [self.source, *self.templates.values()]:
