@@ -9,8 +9,8 @@ const menu = [
   },
   {
     href: "/processos",
-    title: "Processos internos",
-    description: "Passo a passo do processo de implantação (LE e SM): recebimento do projeto, cronograma, homologação, go live e boas práticas.",
+    title: "🚀 Central de Implantação",
+    description: "Portal interativo do processo de implantação (Small & Medium e Large Enterprise): etapas, responsáveis, checklists, módulos e templates.",
   },
 ];
 
