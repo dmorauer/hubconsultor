@@ -1,178 +1,30 @@
-"use client";
+import Link from "next/link";
+import AppHeader from "@/components/AppHeader";
 
-import { ChangeEvent, useMemo, useRef, useState } from "react";
-import { signOut } from "next-auth/react";
-import * as XLSX from "xlsx";
-import { Conversion, exportDefaults, exportHierarchyCsv, exportSynchronizer, getHierarchyIssues, HierarchyMode, HierarchyNode, isValidCnpj, outputHeaders, parseHierarchyWorkbook, parseWorkbook } from "@/lib/conversion";
-
-type LoadKey = "EMPLOYER" | "CUST" | "EXPENSES" | "USERS";
-type User = { row: number; name: string; cpf: string; email: string; sexo: string; ativo: string };
-type EditableUserField = keyof Pick<User, "name" | "cpf" | "email" | "sexo" | "ativo">;
-type UserEditor = { row: number; field: EditableUserField; label: string; value: string };
-type HierarchyEditor = HierarchyNode;
-type Fix = { id: string; row: number; field: string; before: string; after: string; reason: string };
-type Issue = { row: number; field: string; reason: string; severity: "Erro" | "Pendente"; kind?: LoadKey };
-type History = { before: User[]; label: string };
-type ExportMode = "DIRECT" | "SYNCHRONIZER";
-type HierarchyDisplayRow = { kind: "root"; root: string } | { kind: "node"; node: HierarchyNode; level: number; parentInFile: boolean };
-
-const loads: Record<LoadKey, { label: string; aliases: string[] }> = {
-  EMPLOYER: { label: "Unidades de negócio", aliases: ["empresas", "empresa", "unidades de negocio"] },
-  CUST: { label: "Centros de custo", aliases: ["centros de custo", "centro de custo"] },
-  EXPENSES: { label: "Tipos de despesa", aliases: ["tipos de despesa", "despesas"] },
-  USERS: { label: "Usuários", aliases: ["colaboradores", "usuarios"] },
-};
-const hierarchyFields: { key: Exclude<keyof HierarchyNode, "sourceRow">; label: string }[] = [{ key: "root", label: "Identificador raiz" }, { key: "parent", label: "Identificador pai" }, { key: "parentDescription", label: "Descrição do pai" }, { key: "id", label: "Identificador" }, { key: "description", label: "Descrição" }, { key: "active", label: "Ativo" }, { key: "company", label: "Empresa" }, { key: "allowanceId", label: "Identificador de alçada" }, { key: "travelerCpf", label: "CPF do colaborador" }, { key: "approverCpf", label: "CPF do aprovador" }];
-const norm = (value: unknown) => String(value ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
-const digits = (value: unknown) => String(value ?? "").replace(/\D/g, "");
-const find = (headers: unknown[], label: string) => headers.findIndex((header) => norm(header).includes(norm(label)));
-const valueAt = (row: unknown[], index: number) => index < 0 ? "" : String(row[index] ?? "").trim();
-
-function normalizeSex(value: string) { const current = value.trim(); const first = current.charAt(0).toUpperCase(); return first === "M" || first === "F" ? first : current; }
-function normalizeActive(value: string) { const current = value.trim(); if (!current) return "S"; return current.toUpperCase().startsWith("S") ? "S" : current.toUpperCase().startsWith("N") ? "N" : current; }
-function validEmail(value: string) { return /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/.test(value); }
+const menu = [
+  {
+    href: "/implantacao",
+    title: "Implantação",
+    description: "Validador de cargas: analise planilhas de clientes, revise sugestões e exporte para o Paytrack ou para o Sincronizador.",
+  },
+];
 
 export default function Home() {
-  const [fileName, setFileName] = useState(""); const [loadRows, setLoadRows] = useState<Record<LoadKey, number>>({ EMPLOYER: 0, CUST: 0, EXPENSES: 0, USERS: 0 });
-  const [users, setUsers] = useState<User[]>([]); const [history, setHistory] = useState<History[]>([]); const [error, setError] = useState(""); const [analyzing, setAnalyzing] = useState(false);
-  const [editor, setEditor] = useState<UserEditor | null>(null);
-  const [hierarchyEditor, setHierarchyEditor] = useState<HierarchyEditor | null>(null); const [hierarchyHistory, setHierarchyHistory] = useState<HierarchyNode[][]>([]);
-  const [conversion, setConversion] = useState<Conversion | null>(null); const [exporting, setExporting] = useState(false);
-  const [hierarchy, setHierarchy] = useState<HierarchyNode[]>([]); const [hierarchyName, setHierarchyName] = useState(""); const [hierarchyLoading, setHierarchyLoading] = useState(false);
-  const [hierarchyMode, setHierarchyMode] = useState<HierarchyMode>("HIERARQUIA");
-  const [hierarchyQuery, setHierarchyQuery] = useState(""); const [hierarchyCompany, setHierarchyCompany] = useState(""); const [hierarchyExpanded, setHierarchyExpanded] = useState(true);
-  const [exportMode, setExportMode] = useState<ExportMode>("DIRECT");
-  const [integrationPattern, setIntegrationPattern] = useState("0.{EXTRAFRUTI}.1.{CASAFRUTI}");
-  const [emailDomain, setEmailDomain] = useState(""); const sessionInput = useRef<HTMLInputElement>(null);
-  const [outputKind, setOutputKind] = useState<LoadKey>("USERS");
-  const fixes = useMemo<Fix[]>(() => {
-    const userFixes = users.flatMap((user) => {
-      const proposal: Fix[] = []; const cpf = digits(user.cpf);
-      if (cpf && cpf.length < 11) proposal.push({ id: `${user.row}-cpf`, row: user.row, field: "cpf", before: user.cpf, after: cpf.padStart(11, "0"), reason: "CPF será completado com zeros à esquerda." });
-      const sexo = normalizeSex(user.sexo); if (sexo && sexo !== user.sexo) proposal.push({ id: `${user.row}-sexo`, row: user.row, field: "sexo", before: user.sexo, after: sexo, reason: "Sexo será normalizado para M ou F." });
-      const ativo = normalizeActive(user.ativo); if (ativo !== user.ativo) proposal.push({ id: `${user.row}-ativo`, row: user.row, field: "ativo", before: user.ativo || "(vazio)", after: ativo, reason: "Ativo será normalizado para S ou N." });
-      return proposal;
-    });
-    const employerFixes: Fix[] = [];
-    if (conversion?.EMPLOYER) {
-      conversion.EMPLOYER.forEach((record) => {
-        const rawCep = record.values[13];
-        const cepDigits = digits(rawCep);
-        if (cepDigits && cepDigits.length < 8) {
-          const padded = cepDigits.padStart(8, "0");
-          if (padded !== rawCep) employerFixes.push({ id: `emp-${record.sourceRow}-cep`, row: record.sourceRow, field: "CEP (Unidades)", before: rawCep, after: padded, reason: "CEP será completado com zeros à esquerda." });
-        }
-        const rawTel = record.values[3];
-        const telDigits = digits(rawTel);
-        if (telDigits && telDigits !== rawTel && telDigits.length >= 8 && telDigits.length <= 11) {
-          employerFixes.push({ id: `emp-${record.sourceRow}-tel`, row: record.sourceRow, field: "Telefone (Unidades)", before: rawTel, after: telDigits, reason: "Telefone será normalizado para apenas dígitos." });
-        }
-      });
-    }
-    return [...userFixes, ...employerFixes];
-  }, [users, conversion]);
-  const issues = useMemo<Issue[]>(() => {
-    const repeated = new Set(users.filter((user) => user.email).map((user) => user.email.toLowerCase()).filter((email, _, all) => all.filter((current) => current === email).length > 1));
-    const repeatedCpf = new Set(users.map((user) => digits(user.cpf)).filter((cpf, _, all) => cpf && all.filter((current) => current === cpf).length > 1));
-    return users.flatMap((user) => {
-      const list: Issue[] = []; const cpf = digits(user.cpf);
-      if (!user.name) list.push({ row: user.row, field: "Nome", reason: "Campo obrigatório vazio.", severity: "Pendente" });
-      if (!cpf) list.push({ row: user.row, field: "CPF", reason: "Campo obrigatório vazio.", severity: "Pendente" });
-      else if (cpf.length > 11) list.push({ row: user.row, field: "CPF", reason: "CPF possui mais de 11 dígitos; ele não será cortado.", severity: "Erro" });
-      else if (repeatedCpf.has(cpf)) list.push({ row: user.row, field: "CPF", reason: "CPF repetido em mais de uma linha. Revise os registros antes de exportar.", severity: "Erro" });
-      if (!user.email) list.push({ row: user.row, field: "E-mail", reason: "Campo obrigatório vazio.", severity: "Pendente" });
-      else if (!validEmail(user.email)) list.push({ row: user.row, field: "E-mail", reason: "Formato de e-mail inválido.", severity: "Erro" });
-      else if (repeated.has(user.email.toLowerCase())) list.push({ row: user.row, field: "E-mail", reason: "E-mail repetido. A sugestão precisa ser confirmada antes de alterar.", severity: "Erro" });
-      if (user.sexo && !["M", "F"].includes(normalizeSex(user.sexo))) list.push({ row: user.row, field: "Sexo", reason: "Valor não identificado como M ou F.", severity: "Pendente" });
-      return list;
-    });
-  }, [users]);
-  const crossIssues = useMemo<Issue[]>(() => { if (!conversion) return []; const companyRefs = new Set(conversion.EMPLOYER.flatMap((record) => [record.values[1], record.values[6]].filter(Boolean).map(norm))); const costRefs = new Set(conversion.CUST.map((record) => norm(record.values[1])).filter(Boolean)); return conversion.USERS.flatMap((record) => { const list: Issue[] = []; if (record.values[9] && !companyRefs.has(norm(record.values[9]))) list.push({ row: record.sourceRow, field: "Empresa", reason: "Empresa não localizada nesta carga; ela pode já existir no Paytrack.", severity: "Pendente" }); if (record.values[10] && !costRefs.has(norm(record.values[10]))) list.push({ row: record.sourceRow, field: "Centro de custo", reason: "Centro de custo não localizado nesta carga; ele pode já existir no Paytrack.", severity: "Pendente" }); return list; }); }, [conversion]);
-  const loadIssues = useMemo<Issue[]>(() => { if (!conversion) return []; const result: Issue[] = []; const companyRefs = new Set(conversion.EMPLOYER.flatMap((record) => [record.values[1], record.values[6]].filter(Boolean).map(norm))); conversion.EMPLOYER.forEach((record) => { if (!/^\d{14}$/.test(digits(record.values[1]))) result.push({ kind: "EMPLOYER", row: record.sourceRow, field: "CNPJ", reason: "CNPJ deve conter exatamente 14 dígitos.", severity: "Erro" }); else if (!isValidCnpj(record.values[1])) result.push({ kind: "EMPLOYER", row: record.sourceRow, field: "CNPJ", reason: "CNPJ inválido (dígitos verificadores incorretos). Confirme o documento.", severity: "Erro" }); if (record.values[4] && !validEmail(record.values[4])) result.push({ kind: "EMPLOYER", row: record.sourceRow, field: "E-mail", reason: "Formato de e-mail inválido.", severity: "Erro" }); }); conversion.CUST.forEach((record) => { if (!record.values[1]) result.push({ kind: "CUST", row: record.sourceRow, field: "Identificador", reason: "Campo obrigatório vazio.", severity: "Pendente" }); if (!record.values[2]) result.push({ kind: "CUST", row: record.sourceRow, field: "Descrição", reason: "Campo obrigatório vazio.", severity: "Pendente" }); if (record.values[4] && !companyRefs.has(norm(record.values[4]))) result.push({ kind: "CUST", row: record.sourceRow, field: "Empresa", reason: "Empresa não localizada nesta carga; ela pode já existir no Paytrack.", severity: "Pendente" }); }); conversion.EXPENSES.forEach((record) => { if (!record.values[1]) result.push({ kind: "EXPENSES", row: record.sourceRow, field: "Descrição", reason: "Campo obrigatório vazio.", severity: "Pendente" }); }); return result; }, [conversion]);
-  const emailProposals = useMemo(() => { if (!/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(emailDomain)) return []; const duplicates = new Set(users.map((user) => user.email.toLowerCase()).filter((email, _, all) => email && all.filter((current) => current === email).length > 1)); return users.filter((user) => duplicates.has(user.email.toLowerCase()) && /^\d{11}$/.test(digits(user.cpf))).map((user) => ({ row: user.row, before: user.email, after: `${digits(user.cpf)}@${emailDomain.toLowerCase()}` })); }, [users, emailDomain]);
-  const hierarchyIssues = useMemo(() => { const result = getHierarchyIssues(hierarchy); if (hierarchyMode === "HIERARQUIA_COLABORADORES") hierarchy.forEach((node) => { if (!node.travelerCpf) result.push({ sourceRow: node.sourceRow, field: "cpf_colaborador", reason: "Obrigatório para o tipo HIERARQUIA_COLABORADORES.", severity: "Erro" }); }); if (hierarchyMode === "HIERARQUIA_APROVADORES") hierarchy.forEach((node) => { if (!node.approverCpf) result.push({ sourceRow: node.sourceRow, field: "cpf_aprovador", reason: "Obrigatório para o tipo HIERARQUIA_APROVADORES.", severity: "Erro" }); }); return result; }, [hierarchy, hierarchyMode]);
-  const hierarchyIssueGroups = useMemo(() => [...hierarchyIssues.reduce((groups, issue) => { const key = `${issue.severity}:${issue.field}:${issue.reason}`; const group = groups.get(key) ?? { ...issue, count: 0, rows: [] as number[] }; group.count += 1; group.rows.push(issue.sourceRow); groups.set(key, group); return groups; }, new Map<string, { sourceRow: number; field: string; reason: string; severity: "Erro" | "Pendente"; count: number; rows: number[] }>()).values()], [hierarchyIssues]);
-  const hierarchyRows = useMemo<HierarchyDisplayRow[]>(() => { const result: HierarchyDisplayRow[] = []; const roots = [...new Set(hierarchy.map((node) => node.root))]; roots.forEach((root) => { const nodes = hierarchy.filter((node) => node.root === root); const byParent = new Map<string, HierarchyNode[]>(); nodes.forEach((node) => { const key = norm(node.parent); byParent.set(key, [...(byParent.get(key) ?? []), node]); }); const known = new Set(nodes.map((node) => norm(node.id))); const visited = new Set<number>(); const append = (node: HierarchyNode, level: number) => { if (visited.has(node.sourceRow)) return; visited.add(node.sourceRow); result.push({ kind: "node", node, level, parentInFile: known.has(norm(node.parent)) }); (byParent.get(norm(node.id)) ?? []).sort((a, b) => a.description.localeCompare(b.description)).forEach((child) => append(child, level + 1)); }; result.push({ kind: "root", root }); nodes.filter((node) => !node.parent || !known.has(norm(node.parent))).sort((a, b) => a.description.localeCompare(b.description)).forEach((node) => append(node, 1)); nodes.sort((a, b) => a.description.localeCompare(b.description)).forEach((node) => append(node, 1)); }); return result; }, [hierarchy]);
-  const hierarchyCompanies = useMemo(() => [...new Set(hierarchy.map((node) => node.company).filter(Boolean))].sort((a, b) => a.localeCompare(b)), [hierarchy]);
-  const visibleHierarchyRows = useMemo(() => { const query = norm(hierarchyQuery); const matches = (node: HierarchyNode) => (!query || [node.id, node.description, node.parent, node.company].some((value) => norm(value).includes(query))) && (!hierarchyCompany || node.company === hierarchyCompany); const rootsWithMatches = new Set(hierarchyRows.filter((item): item is Extract<HierarchyDisplayRow, { kind: "node" }> => item.kind === "node" && matches(item.node)).map((item) => item.node.root)); return hierarchyRows.filter((item) => item.kind === "root" ? rootsWithMatches.has(item.root) : matches(item.node)); }, [hierarchyRows, hierarchyQuery, hierarchyCompany]);
-
-  async function analyzeFile(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0]; if (!file) return;
-    setError(""); setAnalyzing(true); setFileName(file.name);
-    try {
-      const buffer = await file.arrayBuffer(); const workbook = XLSX.read(buffer, { type: "array" }); const nextConversion = parseWorkbook(buffer); const counts = { EMPLOYER: nextConversion.EMPLOYER.length, CUST: nextConversion.CUST.length, EXPENSES: nextConversion.EXPENSES.length, USERS: nextConversion.USERS.length };
-      const userSheet = workbook.SheetNames.find((name) => loads.USERS.aliases.includes(norm(name))); if (!userSheet) throw new Error("Aba de Colaboradores não encontrada.");
-      const rows = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets[userSheet], { header: 1, defval: "" }); const [headers = [], ...data] = rows;
-      const indexes = { name: find(headers, "Nome"), cpf: find(headers, "CPF"), email: find(headers, "E-mail"), sexo: find(headers, "Sexo"), ativo: find(headers, "Ativo") };
-      if (indexes.name < 0 || indexes.cpf < 0 || indexes.email < 0) throw new Error("Aba de Colaboradores sem os cabeçalhos Nome, CPF e E-mail.");
-      setLoadRows(counts); setConversion(nextConversion); setUsers(data.filter((row) => row.some((cell) => String(cell).trim())).map((row, index) => ({ row: index + 2, name: valueAt(row, indexes.name), cpf: valueAt(row, indexes.cpf), email: valueAt(row, indexes.email), sexo: valueAt(row, indexes.sexo), ativo: valueAt(row, indexes.ativo) }))); setHistory([]);
-    } catch (caught) { setUsers([]); setError(caught instanceof Error ? caught.message : "Não foi possível ler esta planilha."); }
-    finally { setAnalyzing(false); }
-  }
-  async function analyzeHierarchy(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0]; if (!file) return; setHierarchyLoading(true);
-    try {
-      const parsed = parseHierarchyWorkbook(await file.arrayBuffer());
-      setHierarchy(parsed); setHierarchyName(file.name); setHierarchyQuery(""); setHierarchyCompany(""); setHierarchyExpanded(true); setHierarchyHistory([]); setError("");
-      const upperName = file.name.toUpperCase();
-      if (upperName.includes("COLABORADORES")) setHierarchyMode("HIERARQUIA_COLABORADORES");
-      else if (upperName.includes("APROVADORES")) setHierarchyMode("HIERARQUIA_APROVADORES");
-      else if (upperName.includes("HIERARQUIA")) setHierarchyMode("HIERARQUIA");
-    } catch (caught) { setHierarchy([]); setHierarchyName(""); setError(caught instanceof Error ? caught.message : "Não foi possível ler a hierarquia."); }
-    finally { setHierarchyLoading(false); }
-  }
-  function applyFixes() {
-    if (!fixes.length || !window.confirm(`Aplicar ${fixes.length} correção(ões) propostas?`)) return;
-    setHistory((current) => [...current, { before: users, label: `${fixes.length} correção(ões) em lote` }]);
-    setUsers((current) => current.map((user) => fixes.filter((fix) => fix.row === user.row && fix.field in user).reduce((next, fix) => ({ ...next, [fix.field]: fix.after }), user)));
-    if (conversion) {
-      setConversion((current) => {
-        if (!current) return current;
-        const next = structuredClone(current);
-        fixes.forEach((fix) => {
-          if (fix.field === "CEP (Unidades)") {
-            const record = next.EMPLOYER.find((r) => r.sourceRow === fix.row);
-            if (record) record.values[13] = fix.after;
-          } else if (fix.field === "Telefone (Unidades)") {
-            const record = next.EMPLOYER.find((r) => r.sourceRow === fix.row);
-            if (record) record.values[3] = fix.after;
-          }
-        });
-        return next;
-      });
-    }
-  }
-  function undo() { const last = history.at(-1); if (!last) return; setUsers(last.before); setHistory((current) => current.slice(0, -1)); }
-  function openEditor(issue: Issue) { const fieldMap: Record<string, { field: EditableUserField; label: string }> = { Nome: { field: "name", label: "Nome completo" }, CPF: { field: "cpf", label: "CPF" }, "E-mail": { field: "email", label: "E-mail" }, Sexo: { field: "sexo", label: "Sexo" } }; const target = !issue.kind ? fieldMap[issue.field] : undefined; const user = users.find((item) => item.row === issue.row); if (!target || !user) return; setEditor({ row: user.row, field: target.field, label: target.label, value: user[target.field] }); }
-  function applyEditor() { if (!editor) return; const nextValue = editor.value.trim(); const current = users.find((user) => user.row === editor.row); if (!current || current[editor.field] === nextValue) { setEditor(null); return; } setHistory((items) => [...items, { before: users, label: `${editor.label} ajustado na linha ${editor.row}` }]); setUsers((items) => items.map((user) => user.row === editor.row ? { ...user, [editor.field]: nextValue } : user)); setEditor(null); }
-  function applyHierarchyEditor() { if (!hierarchyEditor) return; const current = hierarchy.find((node) => node.sourceRow === hierarchyEditor.sourceRow); if (!current || JSON.stringify(current) === JSON.stringify(hierarchyEditor)) { setHierarchyEditor(null); return; } setHierarchyHistory((items) => [...items, hierarchy]); setHierarchy((items) => items.map((node) => node.sourceRow === hierarchyEditor.sourceRow ? hierarchyEditor : node)); setHierarchyEditor(null); }
-  function undoHierarchy() { const last = hierarchyHistory.at(-1); if (!last) return; setHierarchy(last); setHierarchyHistory((items) => items.slice(0, -1)); }
-  function applyEmails() { if (!emailProposals.length || !window.confirm(`Aplicar ${emailProposals.length} sugestão(ões) de e-mail?`)) return; setHistory((current) => [...current, { before: users, label: `${emailProposals.length} sugestão(ões) de e-mail` }]); setUsers((current) => current.map((user) => ({ ...user, email: emailProposals.find((item) => item.row === user.row)?.after ?? user.email }))); }
-  function buildReviewReport() { const pending = [...issues, ...crossIssues, ...loadIssues]; const lines = ["RELATÓRIO DE REVISÃO — VALIDADOR DE CARGAS", "", `Gerado em: ${new Date().toLocaleString("pt-BR")}`, `Arquivo principal: ${fileName || "Não carregado"}`, `Destino: ${exportMode === "DIRECT" ? "Importação direta Paytrack" : "Sincronizador via CSV"}`, "", "REGISTROS", ...((Object.keys(loadRows) as LoadKey[]).map((key) => `- ${loads[key].label}: ${loadRows[key]}`)), `- Hierarquia: ${hierarchy.length}`, "", "PENDÊNCIAS", `- Cargas principais: ${pending.length}`, `- Hierarquia: ${hierarchyIssues.length}`, "", "DECISÕES APLICADAS", ...(history.length ? history.map((item) => `- ${item.label}`) : ["- Nenhuma decisão manual aplicada."]), "", "OBSERVAÇÃO", "Este relatório não contém senhas nem valores de campos sensíveis."]; return lines.join("\r\n"); }
-  function saveSession() { if (!conversion) return; const review = structuredClone(conversion); review.USERS.forEach((record) => { record.values[8] = ""; Object.keys(record.source).forEach((header) => { if (norm(header).includes("senha")) record.source[header] = ""; }); }); const payload = JSON.stringify({ version: 1, fileName, loadRows, users, conversion: review, integrationPattern, emailDomain }); const anchor = document.createElement("a"); anchor.href = URL.createObjectURL(new Blob([payload], { type: "application/json" })); anchor.download = "revisao-sheetanalyser.json"; anchor.click(); URL.revokeObjectURL(anchor.href); }
-  async function openSession(event: ChangeEvent<HTMLInputElement>) { const file = event.target.files?.[0]; if (!file) return; try { const saved = JSON.parse(await file.text()); if (saved.version !== 1 || !saved.conversion || !Array.isArray(saved.users)) throw new Error("Arquivo de revisão inválido."); setFileName(saved.fileName ?? "Revisão carregada"); setLoadRows(saved.loadRows); setUsers(saved.users); setConversion(saved.conversion); setIntegrationPattern(saved.integrationPattern ?? integrationPattern); setEmailDomain(saved.emailDomain ?? ""); setHistory([]); setError(""); } catch (caught) { setError(caught instanceof Error ? caught.message : "Não foi possível abrir a revisão."); } }
-  const integrationRows = useMemo(() => (conversion?.USERS ?? []).flatMap((record) => { const sourceValue = (label: string) => Object.entries(record.source).find(([header]) => norm(header) === norm(label))?.[1] ?? ""; const extra = sourceValue("Código de integração Extrafruti"); const casa = sourceValue("Código de integração Casafruti"); if (!extra && !casa) return []; return [{ row: record.sourceRow, extra, casa, current: record.values[5], proposal: integrationPattern.replace("{EXTRAFRUTI}", extra).replace("{CASAFRUTI}", casa) }]; }), [conversion, integrationPattern]);
-  function applyIntegrations() { if (!conversion || !integrationRows.length || !integrationPattern.includes("{")) return; if (!window.confirm(`Aplicar ${integrationRows.length} código(s) de integração com este formato?`)) return; setConversion((current) => { if (!current) return current; const next = structuredClone(current); integrationRows.forEach((proposal) => { const record = next.USERS.find((item) => item.sourceRow === proposal.row); if (record) record.values[5] = proposal.proposal; }); return next; }); }
-  async function exportFiles() { if (!conversion || exporting) return; if (exportMode === "SYNCHRONIZER" && hierarchy.length && hierarchyIssues.some((issue) => issue.severity === "Erro")) { setError("Corrija as pendências de hierarquia antes de exportar para o Sincronizador."); return; } setExporting(true); try { const adjusted = structuredClone(conversion); adjusted.USERS.forEach((record) => { const user = users.find((item) => item.row === record.sourceRow); if (user) { record.values[1] = user.sexo; record.values[2] = user.cpf; record.values[3] = user.email; record.values[6] = user.ativo; } }); const report = buildReviewReport(); if (exportMode === "SYNCHRONIZER") await exportSynchronizer(adjusted, hierarchy, hierarchyMode, report); else await exportDefaults(adjusted, report); } catch (caught) { setError(caught instanceof Error ? caught.message : "Não foi possível exportar as cargas."); } finally { setExporting(false); } }
-  function exportHierarchyOnly() { if (!hierarchy.length || exporting) return; if (hierarchyIssues.some((issue) => issue.severity === "Erro")) { setError("Corrija as pendências de hierarquia antes de gerar o CSV."); return; } setExporting(true); try { exportHierarchyCsv(hierarchy, hierarchyMode); setError(""); } finally { setExporting(false); } }
-  const ready = Object.values(loadRows).filter(Boolean).length - Object.values(loadRows).filter((count) => count && (issues.length > 0)).length;
-  const outputPreview = conversion?.[outputKind].slice(0, 25) ?? [];
-
-  return <main><section className="hero"><div className="hero-content"><span className="brand">PAYTRACK CENTER</span><h1>Validador de cargas</h1><p>Analise planilhas, confira as sugestões e decida antes de exportar.</p></div><button className="logout-button" onClick={() => signOut({ callbackUrl: "/login" })}>Sair</button></section>
-    <section className="upload-card"><div><h2>Planilha do cliente</h2><p>O arquivo é processado somente no navegador e não é armazenado.</p></div><div className="actions"><button onClick={() => sessionInput.current?.click()}>Abrir revisão</button><button onClick={saveSession} disabled={!conversion}>Salvar revisão</button><label className="upload-button">{analyzing ? "Analisando…" : "Selecionar planilha .xlsx"}<input type="file" accept=".xlsx" onChange={analyzeFile} disabled={analyzing} /></label><input ref={sessionInput} type="file" accept=".json" onChange={openSession} hidden /></div></section>{error && <p className="error">{error}</p>}
-      <section className="table-card review"><div className="table-title"><div><h2>Hierarquia para o Sincronizador</h2><p>Carregue a planilha de hierarquia para conferir visualmente quem responde a quem antes de gerar o CSV.</p></div><div className="actions"><select className="pattern" value={hierarchyMode} onChange={(event) => setHierarchyMode(event.target.value as HierarchyMode)}><option value="HIERARQUIA">Estrutura de hierarquia</option><option value="HIERARQUIA_COLABORADORES">Vínculo de colaboradores</option><option value="HIERARQUIA_APROVADORES">Vínculo de aprovadores</option></select><button className="edit-button" onClick={undoHierarchy} disabled={!hierarchyHistory.length}>Desfazer nó</button><label className="upload-button secondary">{hierarchyLoading ? "Lendo…" : "Selecionar hierarquia .xlsx / .csv"}<input type="file" accept=".xlsx,.csv" onChange={analyzeHierarchy} disabled={hierarchyLoading} /></label></div></div>{hierarchy.length > 0 && <><p className="hierarchy-note"><strong>{hierarchyName}</strong> · {hierarchy.length} nó(s) · {hierarchyIssues.length} pendência(s). O recuo representa o vínculo pelo identificador_pai.</p><div className="tree-controls"><input className="pattern" placeholder="Buscar código ou descrição" value={hierarchyQuery} onChange={(event) => setHierarchyQuery(event.target.value)} /><select className="pattern" value={hierarchyCompany} onChange={(event) => setHierarchyCompany(event.target.value)}><option value="">Todas as empresas</option>{hierarchyCompanies.map((company) => <option key={company} value={company}>{company}</option>)}</select><button className="edit-button" onClick={() => setHierarchyExpanded((current) => !current)}>{hierarchyExpanded ? "Recolher árvore" : "Expandir árvore"}</button></div><p className="tree-result">{visibleHierarchyRows.filter((item) => item.kind === "node").length} nó(s) exibido(s).</p>{hierarchyExpanded && <div className="hierarchy-tree">{visibleHierarchyRows.map((item, index) => item.kind === "root" ? <div className="hierarchy-root" key={`${item.root}-${index}`}>{item.root}</div> : <div className="hierarchy-node" style={{ paddingLeft: `${20 + item.level * 28}px` }} key={`${item.node.sourceRow}-${item.node.id}`}><span className="tree-line">└──</span><div><strong>{item.node.description || "Sem descrição"}</strong><span>{item.node.id || "Sem identificador"}{item.node.parent ? norm(item.node.parent) === norm(item.node.id) ? " · nível-base" : ` · acima: ${item.parentInFile ? item.node.parent : `${item.node.parent} (fora do arquivo)`}` : " · abaixo da raiz"}</span></div><button className="edit-button tree-edit" onClick={() => setHierarchyEditor({ ...item.node })}>Editar</button></div>)}</div>}{hierarchyIssueGroups.length > 0 && <div className="issue-groups"><h3>Pendências agrupadas</h3><p>Ocorrências iguais foram consolidadas para manter a revisão leve.</p>{hierarchyIssueGroups.map((group, index) => <details key={`${group.field}-${index}`}><summary><span className={`badge ${group.severity === "Erro" ? "danger" : "pending"}`}>{group.severity}</span><strong>{group.count} ocorrência(s)</strong><span>{group.field}</span></summary><p>{group.reason}</p><small>Linhas: {group.rows.slice(0, 12).join(", ")}{group.rows.length > 12 ? ` e mais ${group.rows.length - 12}` : ""}.</small></details>)}</div>}</>}</section>
-    {hierarchy.length > 0 && <section className="export-card hierarchy-export"><div><h2>Exportar somente a hierarquia</h2><p>Baixa <strong>{hierarchyMode}.csv</strong> com o cabeçalho exigido pelo Sincronizador. Depois, envie o arquivo diretamente para a pasta do seu e-mail no Google Drive.</p></div><button className="primary" onClick={exportHierarchyOnly} disabled={exporting}>{exporting ? "Gerando arquivo…" : `Baixar ${hierarchyMode}.csv`}</button></section>}
-    {users.length > 0 && <><section className="summary"><div><strong>{fileName}</strong><span>Arquivo em análise</span></div><div><strong>{issues.length + crossIssues.length + loadIssues.length}</strong><span>Erros e pendências</span></div><div><strong>{fixes.length}</strong><span>Correções propostas</span></div></section>
-      <section className="table-card"><div className="table-title"><div><h2>Prontidão por carga</h2><p>Pendências em uma carga não bloqueiam a análise das demais.</p></div><span className="local">Processamento local</span></div><div className="table-scroll"><table><thead><tr><th>Carga</th><th>Registros</th><th>Prontidão</th></tr></thead><tbody>{(Object.keys(loads) as LoadKey[]).map((key) => { const count = key === "USERS" ? issues.length + crossIssues.length : loadIssues.filter((issue) => issue.kind === key).length; return <tr key={key}><td>{loads[key].label}</td><td>{loadRows[key]}</td><td><span className={`badge ${loadRows[key] ? (count ? "pending" : "ready") : "pending"}`}>{loadRows[key] ? (count ? `Com ${count} pendência(s)` : "Pronta") : "Sem registros"}</span></td></tr>; })}</tbody></table></div></section>
-      <section className="table-card review"><div className="table-title"><div><h2>Correções em lote</h2><p>Confira o antes e depois. Nenhuma correção é aplicada sem sua confirmação.</p></div><div className="actions"><button onClick={undo} disabled={!history.length}>Desfazer última</button><button className="primary" onClick={applyFixes} disabled={!fixes.length}>Aplicar {fixes.length} correções</button></div></div><div className="table-scroll"><table><thead><tr><th>Linha</th><th>Campo</th><th>Antes</th><th>Proposta</th><th>Motivo</th></tr></thead><tbody>{fixes.length ? fixes.map((fix) => <tr key={fix.id}><td>{fix.row}</td><td>{fix.field.toUpperCase()}</td><td>{fix.before}</td><td>{fix.after}</td><td>{fix.reason}</td></tr>) : <tr><td colSpan={5}>Não há normalizações pendentes.</td></tr>}</tbody></table></div></section>
-      <section className="table-card review"><div className="table-title"><div><h2>Sugestões de e-mail</h2><p>Informe e confirme o domínio da unidade antes de aplicar sugestões para e-mails repetidos.</p></div><div className="actions"><input className="pattern" placeholder="exemplo.com.br" value={emailDomain} onChange={(event) => setEmailDomain(event.target.value)} /><button className="primary" onClick={applyEmails} disabled={!emailProposals.length}>Aplicar {emailProposals.length} sugestões</button></div></div><div className="table-scroll"><table><thead><tr><th>Linha</th><th>E-mail atual</th><th>Sugestão</th></tr></thead><tbody>{emailProposals.length ? emailProposals.map((item) => <tr key={item.row}><td>{item.row}</td><td>{item.before}</td><td>{item.after}</td></tr>) : <tr><td colSpan={3}>Informe um domínio válido para revisar as sugestões disponíveis.</td></tr>}</tbody></table></div></section>
-      <section className="table-card review"><div className="table-title"><div><h2>Pendências</h2><p>Revise as informações antes de gerar a carga final.</p></div></div><div className="table-scroll"><table><thead><tr><th>Situação</th><th>Carga</th><th>Linha</th><th>Campo</th><th>Motivo</th><th>Ação</th></tr></thead><tbody>{[...issues, ...crossIssues, ...loadIssues].length ? [...issues, ...crossIssues, ...loadIssues].map((issue, index) => { const editable = !issue.kind && ["Nome", "CPF", "E-mail", "Sexo"].includes(issue.field); return <tr key={`${issue.row}-${index}`}><td><span className={`badge ${issue.severity === "Erro" ? "danger" : "pending"}`}>{issue.severity}</span></td><td>{issue.kind ? loads[issue.kind].label : "Usuários"}</td><td>{issue.row}</td><td>{issue.field}</td><td>{issue.reason}</td><td>{editable && <button className="edit-button" onClick={() => openEditor(issue)}>Editar</button>}</td></tr>; }) : <tr><td colSpan={6}>Nenhuma pendência local.</td></tr>}</tbody></table></div></section>
-      {integrationRows.length > 0 && <section className="table-card review"><div className="table-title"><div><h2>Códigos de integração</h2><p>Defina o formato antes de preencher os códigos de origem Casafruti e Extrafruti.</p></div><div className="actions"><input className="pattern" value={integrationPattern} onChange={(event) => setIntegrationPattern(event.target.value)} /><button className="primary" onClick={applyIntegrations}>Aplicar sugestões</button></div></div><div className="table-scroll"><table><thead><tr><th>Linha</th><th>Extrafruti</th><th>Casafruti</th><th>Sugestão</th></tr></thead><tbody>{integrationRows.map((item) => <tr key={item.row}><td>{item.row}</td><td>{item.extra || "—"}</td><td>{item.casa || "—"}</td><td>{item.proposal}</td></tr>)}</tbody></table></div></section>}
-      <section className="table-card review"><div className="table-title"><div><h2>Dados de saída</h2><p>Prévia dos primeiros 25 registros convertidos. Os valores desta tela serão usados na exportação.</p></div><select className="pattern" value={outputKind} onChange={(event) => setOutputKind(event.target.value as LoadKey)}>{(Object.keys(loads) as LoadKey[]).map((key) => <option key={key} value={key}>{loads[key].label}</option>)}</select></div><div className="table-scroll"><table><thead><tr><th>Linha origem</th>{outputHeaders[outputKind].slice(0, 7).map((header) => <th key={header}>{header}</th>)}</tr></thead><tbody>{outputPreview.map((record) => <tr key={record.sourceRow}><td>{record.sourceRow}</td>{record.values.slice(0, 7).map((cell, index) => <td key={index}>{cell || "—"}</td>)}</tr>)}</tbody></table></div></section>
-      <section className="export-card"><div><h2>Exportar cargas</h2><p>{exportMode === "DIRECT" ? "Gera um ZIP com os quatro DEFAULT_*.xlsx para importação direta no Paytrack." : `Gera um ZIP com COLABORADORES.csv e, se carregada, ${hierarchyMode}.csv para a pasta do Sincronizador no Google Drive.`} As decisões feitas nesta tela ainda não são enviadas ao Paytrack.</p></div><div className="actions"><select className="pattern" value={exportMode} onChange={(event) => setExportMode(event.target.value as ExportMode)}><option value="DIRECT">Importação direta Paytrack</option><option value="SYNCHRONIZER">Sincronizador via CSV</option></select><button className="primary" onClick={exportFiles} disabled={exporting}>{exporting ? "Gerando arquivos…" : "Baixar arquivos"}</button></div></section>
-      {history.length > 0 && <p className="notice">Última decisão: {history.at(-1)?.label}. Você pode desfazê-la antes de trocar de planilha.</p>}</>}
-    {editor && <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label={`Editar ${editor.label}`}><section className="editor-modal"><h2>Editar {editor.label}</h2><p>Linha {editor.row}. Esta alteração afeta apenas este registro.</p><input autoFocus className="editor-input" value={editor.value} onChange={(event) => setEditor({ ...editor, value: event.target.value })} onKeyDown={(event) => { if (event.key === "Enter") applyEditor(); if (event.key === "Escape") setEditor(null); }} /><div className="actions"><button onClick={() => setEditor(null)}>Cancelar</button><button className="primary" onClick={applyEditor}>Salvar alteração</button></div></section></div>}
-    {hierarchyEditor && <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Editar nó da hierarquia"><section className="editor-modal hierarchy-modal"><h2>Editar nó da hierarquia</h2><p>Linha {hierarchyEditor.sourceRow}. A alteração atinge somente este nó.</p><div className="hierarchy-form">{hierarchyFields.map(({ key, label }) => <label key={key}>{label}<input value={hierarchyEditor[key]} onChange={(event) => setHierarchyEditor({ ...hierarchyEditor, [key]: event.target.value })} /></label>)}</div><div className="actions"><button onClick={() => setHierarchyEditor(null)}>Cancelar</button><button className="primary" onClick={applyHierarchyEditor}>Salvar alteração</button></div></section></div>}
-    <footer className="app-footer"><span>Paytrack Center</span><span>Os arquivos são analisados localmente no seu navegador.</span></footer>
-  </main>;
+  return (
+    <main>
+      <AppHeader title="Bem-vindo(a)" subtitle="Escolha uma área para começar." />
+      <section className="menu-grid">
+        {menu.map((item) => (
+          <Link key={item.href} href={item.href} className="menu-card">
+            <h2>{item.title}</h2>
+            <p>{item.description}</p>
+          </Link>
+        ))}
+      </section>
+      <footer className="app-footer">
+        <span>Paytrack Center</span>
+        <span>Portal interno para consultores de implantação.</span>
+      </footer>
+    </main>
+  );
 }
