@@ -7,6 +7,11 @@ const menu = [
     title: "Implantação",
     description: "Validador de cargas: analise planilhas de clientes, revise sugestões e exporte para o Paytrack ou para o Sincronizador.",
   },
+  {
+    href: "/processos",
+    title: "Processos internos",
+    description: "Passo a passo do processo de implantação (LE e SM): recebimento do projeto, cronograma, homologação, go live e boas práticas.",
+  },
 ];
 
 export default function Home() {
