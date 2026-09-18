@@ -98,9 +98,32 @@ function cep(value: string): string {
   return /^\d{1,8}$/.test(stripped) ? stripped.padStart(8, "0") : value;
 }
 
+// Recognizes an Excel date cell, DD/MM/YYYY or YYYY-MM-DD; returns "YYYY-MM-DD" when the
+// value is a real calendar date, otherwise the raw text untouched (left for review — never
+// invented). An empty value stays empty since birth date is optional.
+export function birthDate(raw: unknown): string {
+  if (raw instanceof Date && !isNaN(raw.getTime())) return raw.toISOString().slice(0, 10);
+  const value = text(raw);
+  if (!value) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const br = value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (br) {
+    const [, d, m, y] = br;
+    const parsed = new Date(Number(y), Number(m) - 1, Number(d));
+    const valid = parsed.getFullYear() === Number(y) && parsed.getMonth() === Number(m) - 1 && parsed.getDate() === Number(d);
+    return valid ? `${y}-${m}-${d}` : value;
+  }
+  return value;
+}
+
 function value(headers: unknown[], row: unknown[], label: string) {
   const index = headers.findIndex((header) => norm(header) === norm(label));
   return index < 0 ? "" : text(row[index]);
+}
+
+function rawValue(headers: unknown[], row: unknown[], label: string): unknown {
+  const index = headers.findIndex((header) => norm(header) === norm(label));
+  return index < 0 ? "" : row[index];
 }
 
 export function parseHierarchyWorkbook(buffer: ArrayBuffer): HierarchyNode[] {
@@ -146,7 +169,7 @@ export function parseWorkbook(buffer: ArrayBuffer): Conversion {
       if (kind === "EMPLOYER") values = [value(headers,row,"Nome"), compactDocument(value(headers,row,"CNPJ"),14), value(headers,row,"Nome para contato"), value(headers,row,"Telefone"), value(headers,row,"E-mail"), value(headers,row,"Moeda (BRL, EUR, USD)"), value(headers,row,"Código de integração"), "", "", "", "", "", "", cep(value(headers,row,"CEP")), value(headers,row,"Logradouro"), value(headers,row,"Número"), value(headers,row,"Bairro"), value(headers,row,"Cidade"), value(headers,row,"Estado"), country(value(headers,row,"País"))];
       else if (kind === "CUST") values = ["", value(headers,row,"Código Centro de custo"), value(headers,row,"Nome centro de Custo"), "", companyReference(value(headers,row,"Empresa(CNPJ)"))];
       else if (kind === "EXPENSES") values = ["", value(headers,row,"Nome da Despesa"), "", "", "", value(headers,row,"Item de Orçamento"), "", "", "", "", "", "", "", "", "", ""];
-      else { const email = value(headers,row,"E-mail"); const username = value(headers,row,"Usuário") || email; values = [value(headers,row,"Nome completo"), value(headers,row,"Sexo (M ou F)"), compactDocument(value(headers,row,"CPF"),11), email, value(headers,row,"Data de nascimento"), value(headers,row,"Código de integração"), yesNo(value(headers,row,"Ativo (S ou N)")), username, value(headers,row,"Senha"), companyReference(value(headers,row,"Empresa (CNPJ)")), value(headers,row,"Centro de custo (Cód. no ERP)"), value(headers,row,"Descrição centro de custo"), "", ""]; }
+      else { const email = value(headers,row,"E-mail"); const username = value(headers,row,"Usuário") || email; values = [value(headers,row,"Nome completo"), value(headers,row,"Sexo (M ou F)"), compactDocument(value(headers,row,"CPF"),11), email, birthDate(rawValue(headers,row,"Data de nascimento")), value(headers,row,"Código de integração"), yesNo(value(headers,row,"Ativo (S ou N)")), username, value(headers,row,"Senha"), companyReference(value(headers,row,"Empresa (CNPJ)")), value(headers,row,"Centro de custo (Cód. no ERP)"), value(headers,row,"Descrição centro de custo"), "", ""]; }
       return [{ sourceRow: index + 2, values, source }];
     });
   });
